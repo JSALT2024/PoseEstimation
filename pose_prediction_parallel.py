@@ -12,6 +12,8 @@ from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 import gc
 import time
+import random
+import shutil
 
 VisionRunningMode = mp.tasks.vision.RunningMode
 BaseOptions = mp.tasks.BaseOptions
@@ -21,14 +23,15 @@ def load_video_cv(path: str):
     video = []
 
     cap = cv2.VideoCapture(path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
     ret = True
     while ret:
         ret, img = cap.read()
         if ret:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             video.append(img)
-    video = np.array(video)
-    return video
+    cap.release()
+    return video, fps
 
 
 def load_video_decord(path: str, workers: int = 1):
@@ -83,7 +86,6 @@ def mdeiapipe_to_xy(data, image_size=None):
 
 def crop_pad_image(image: np.ndarray, bbox: np.ndarray, border: float = 0.25) -> np.ndarray:
     """Crop the image, pad to square and add a border."""
-    ih, iw = image.shape[:2]
     # get bbox and image
     x0, y0, x1, y1 = bbox
     w, h = x1 - x0, y1 - y0
@@ -114,7 +116,7 @@ def crop_pad_image(image: np.ndarray, bbox: np.ndarray, border: float = 0.25) ->
     x0 += iw
     x1 += iw
 
-    image = np.pad(image, ((ih, ih), (iw, iw), (0, 0)), mode='constant', constant_values=0)  # mode="reflect"
+    image = np.pad(image, ((ih, ih), (iw, iw), (0, 0)), mode='constant', constant_values=114)  # mode="reflect"
     cropped_image = image[y0:y1, x0:x1]
 
     return cropped_image, new_bbox
@@ -190,6 +192,8 @@ def process_hands(mp_hand_keypoints, mp_handedness, pose_keypoints, image_size, 
     # assign hands to sides
     left_wrist = None
     right_wrist = None
+
+    pose_keypoints = None if len(pose_keypoints) == 0 else pose_keypoints
     if pose_keypoints is not None:
         left_wrist = pose_keypoints[15, :2]
         right_wrist = pose_keypoints[16, :2]
@@ -223,13 +227,14 @@ def process_hands(mp_hand_keypoints, mp_handedness, pose_keypoints, image_size, 
     return out
 
 
-def predict(video_path, output_folder, workers, sign_space, video_size=(512, 512), debug=False):
+def predict(video_path, output_folder, workers, sign_space, tmp_folder="", video_size=(512, 512), debug=False):
+    print("video_path", video_path, "output_folder", output_folder, "workers", workers, "sign_space", sign_space,
+          "tmp_folder", tmp_folder)
     predictions = []
     num_predictions = []
 
     # predict
-    images, fps = load_video_decord(video_path, workers)
-    # images = images[:500]
+    images, fps = load_video_cv(video_path)
     print(f"video: {video_path}", f"fps: {fps}", f"frames: {len(images)}", f"frame size: {images[0].shape}")
     # for idx, image in enumerate(tqdm(images, desc="yolov8 predict")):
     for idx, image in enumerate(images):
@@ -245,7 +250,15 @@ def predict(video_path, output_folder, workers, sign_space, video_size=(512, 512
 
     if not single_person:
         # save filename + num_predictions in file
-        return None
+        return {"state": 2}
+
+    # no person video
+    no_person = np.sum(np.array(num_predictions) == 0) / len(num_predictions)
+    print(f"No person images: {no_person:.3f}")
+    no_person = no_person > no_person_frames
+
+    if no_person:
+        return {"state": -2}
 
     # get signing bbox
     x0, y0, x1, y1 = [], [], [], []
@@ -319,6 +332,10 @@ def predict(video_path, output_folder, workers, sign_space, video_size=(512, 512
     file_name = ".".join(os.path.basename(video_path).split(".")[:-1])
     keypoints_path = os.path.join(output_folder, f"{file_name}.json")
     video_path = os.path.join(output_folder, f"{file_name}.mp4")
+    if tmp_folder:
+        os.makedirs(tmp_folder, exist_ok=True)
+        keypoints_path = os.path.join(tmp_folder, f"{file_name}.json")
+        video_path = os.path.join(tmp_folder, f"{file_name}.mp4")
 
     result = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps,
                              video_size)  # frames[0].shape[:2]
@@ -367,7 +384,7 @@ def predict(video_path, output_folder, workers, sign_space, video_size=(512, 512
                 keypoints[name][:, 1] *= nh / oh
                 keypoints[name][:, 0] -= x_move
                 keypoints[name][:, 1] -= y_move
-                keypoints[name] = keypoints[name].tolist()
+                keypoints[name] = np.round(keypoints[name], 3).tolist()
 
         # remove used image
         images[idx] = None
@@ -394,11 +411,25 @@ def predict(video_path, output_folder, workers, sign_space, video_size=(512, 512
         predictions_out[str(idx)] = keypoints
         result.write(cv2.cvtColor(cropped_image_final, cv2.COLOR_RGB2BGR))
 
+    result.release()
+
     keypoints = {"joints": predictions_out}
     with open(keypoints_path, "w") as f:
         json.dump(keypoints, f)
 
-    return len(images)
+    if tmp_folder:
+        if not os.path.exists(os.path.join(output_folder, f"{file_name}.json")):
+            _ = shutil.move(keypoints_path, output_folder)
+
+        if not os.path.exists(os.path.join(output_folder, f"{file_name}.mp4")):
+            _ = shutil.move(video_path, output_folder)
+
+        shutil.rmtree(tmp_folder)
+
+    os.chmod(os.path.join(output_folder, f"{file_name}.json"), 0o0777)
+    os.chmod(os.path.join(output_folder, f"{file_name}.mp4"), 0o0777)
+
+    return {"frames": len(images)}
 
 
 def get_args_parser():
@@ -407,6 +438,8 @@ def get_args_parser():
     parser.add_argument('--input_folder', type=str)
     parser.add_argument('--output_folder', type=str)
     parser.add_argument('--index_path', type=str)
+    parser.add_argument('--index_file', type=str, default="")
+    parser.add_argument('--tmp_folder', type=str)
     parser.add_argument('--checkpoint_folder', default="", type=str)
 
     parser.add_argument('--workers', type=int, default=1)
@@ -417,16 +450,23 @@ def get_args_parser():
 
 
 if __name__ == "__main__":
+    """
+    state: -1 = not processed
+            0 = ended with exception
+            1 = finished successfully
+            2 = more than 1 people
+    """
     args = get_args_parser().parse_args()
 
     yolo_min_confidence = 0.5
     mp_min_confidence = 0.4
     single_person_frames = 0.05
+    no_person_frames = 0.2
 
     # mediapipe
     num_poses = 1
     hand_model_path = os.path.join(args.checkpoint_folder, 'hand_landmarker.task')
-    pose_model_path = os.path.join(args.checkpoint_folder, 'pose_landmarker_lite.task')
+    pose_model_path = os.path.join(args.checkpoint_folder, 'pose_landmarker_full.task')
     face_model_path = os.path.join(args.checkpoint_folder, 'face_landmarker.task')
     yolo_model_path = os.path.join(args.checkpoint_folder, "yolov8n-pose.pt")
 
@@ -461,36 +501,80 @@ if __name__ == "__main__":
 
     input_folder = args.input_folder
     output_folder = args.output_folder
-    index_path = args.index_path
+    index_folder = args.index_path
 
     all_times = 0
     all_frames = 0
     processed_videos = 0
     failed_videos = 0
+
+    num_index_files = 500
+
     while True:
         start_time = time.time()
+        index_files = [os.path.join(index_folder, file) for file in os.listdir(index_folder) if ".csv" in file]
+
         # create index file
         index_row_idx = -1
-        if not os.path.isfile(index_path):
+        if len(index_files) == 0:
             file_names = os.listdir(input_folder)
             file_names = [file_name for file_name in file_names if ".mp4" in file_name]
 
             index_file = pd.DataFrame({"file_names": file_names, "state": [-1] * len(file_names)})
-            index_file.to_csv(index_path, index=False)
+            num_files = len(index_file)
+            step = int(np.round(num_files / num_index_files))
+            print("files", num_files, "step", step)
 
-        index_file = pd.read_csv(index_path)
-        idx_list = index_file[index_file["state"] == -1]
+            # split file
+            index_file_split = []
+            for i in range(1, num_index_files):
+                start = (i - 1) * step
+                end = i * step
+                index_file_split.append(index_file[start:end])
+                print(i, start, end)
+            print(i, end, num_files)
+            index_file_split.append(index_file[end::])
 
-        print("idx_list:", len(idx_list))
-        if len(idx_list) > 0:
-            idx_list = idx_list.sample(1).index.tolist()
-            index_row_idx = idx_list[0]
+            print("Saving index files:")
+            for i, file in enumerate(index_file_split):
+                path = os.path.join(index_folder, f"index_file_{i:03d}.csv")
+                file.to_csv(path, index=False)
+                index_files.append(path)
+                print(path)
+
+        # read file
+        for _ in range(len(index_files)):
+            num_files = len(index_files)
+            idx = random.randint(0, num_files - 1)
+
+            if args.index_file:
+                index_path = args.index_file
+                index_file = pd.read_csv(index_path, dtype={"file_names": str, "state": float})
+                idx_list = index_file[index_file["state"] == -1]
+            else:
+                try:
+                    index_path = index_files[idx]
+                    index_file = pd.read_csv(index_path, dtype={"file_names": str, "state": float})
+                    idx_list = index_file[index_file["state"] == -1]
+                    print(len(idx_list))
+                except Exception as e:
+                    print(f"Loading csv failed: {e}")
+                    idx_list = []
+
+            if len(idx_list) > 0:
+                print("idx_list:", len(idx_list))
+                idx_list = idx_list.sample(1).index.tolist()
+                index_row_idx = idx_list[0]
+
+                print(index_path)
+                break
+            index_files.pop(idx)
 
         print("index_row_idx:", index_row_idx)
         if index_row_idx == -1:
             break
 
-        # get path
+        # set selected file
         index_file.at[index_row_idx, "state"] = 0
         index_file.to_csv(index_path, index=False)
 
@@ -499,19 +583,21 @@ if __name__ == "__main__":
 
         # predict
         try:
-            predictions = predict(video_path, output_folder, args.workers, args.sign_space, debug=args.debug)
-            if predictions is None:
+            predictions = predict(video_path, output_folder, args.workers, args.sign_space, tmp_folder=args.tmp_folder,
+                                  debug=args.debug)
+            if "state" in predictions:
                 print(f"Multiple people in video: {video_path}")
                 index_file = pd.read_csv(index_path)
-                index_file.at[index_row_idx, "state"] = 2
+                index_file.at[index_row_idx, "state"] = predictions["state"]
                 index_file.to_csv(index_path, index=False)
-        except:
+        except Exception as e:
             print(f"Processing failed: {video_path}")
-            predictions = None
+            print(f"Message: {e}")
+            predictions = {}
 
         # save data
-        if predictions is not None:
-            n_frames = predictions
+        if "frames" in predictions:
+            n_frames = predictions["frames"]
 
             index_file = pd.read_csv(index_path)
             index_file.at[index_row_idx, "state"] = 1
@@ -531,3 +617,4 @@ if __name__ == "__main__":
         print()
 
     print("Full processing time:", all_times)
+
