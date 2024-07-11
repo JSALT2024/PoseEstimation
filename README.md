@@ -26,3 +26,19 @@ python pose_prediction_parallel.py \
     --sign_space 5 \
     --debug
 ```
+
+## Predict
+```python
+from predict_pose import predict_pose, create_mediapipe_models#
+
+# load models: 
+#   hand_landmarker.task
+#   pose_landmarker_full.task
+#   face_landmarker.task
+checkpoint_folder = ""
+models = create_mediapipe_models(checkpoint_folder)
+
+# predict
+video = []
+prediction = predict_pose(video, models, 4)
+```
