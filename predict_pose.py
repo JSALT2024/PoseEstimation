@@ -296,11 +296,18 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
         x1.append(_x1)
         y1.append(_y1)
 
-    # create signing space as meadian of all signing spaces
-    x0mp = np.round(np.median(x0)).astype(int)
-    y0mp = np.round(np.median(y0)).astype(int)
-    x1mp = np.round(np.median(x1)).astype(int)
-    y1mp = np.round(np.median(y1)).astype(int)
+    # create signing space as median of all signing spaces
+    if len(x0) == 0:
+        ih, iw = video[0].shape[:2]
+        x0mp = 0
+        y0mp = 0
+        x1mp = iw
+        y1mp = ih
+    else:
+        x0mp = np.round(np.median(x0)).astype(int)
+        y0mp = np.round(np.median(y0)).astype(int)
+        x1mp = np.round(np.median(x1)).astype(int)
+        y1mp = np.round(np.median(y1)).astype(int)
 
     for idx, (image, prediction) in enumerate(zip(results["images"], mp_predictions)):
         ih, iw = image.shape[:2]
