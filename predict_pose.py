@@ -136,7 +136,7 @@ def crop_pad_image(image: np.ndarray, bbox: np.ndarray, border: float = 0.25) ->
     x0 += iw
     x1 += iw
 
-    image = np.pad(image, ((ih, ih), (iw, iw), (0, 0)), mode='constant', constant_values=114)  # mode="reflect"
+    image = np.pad(image, ((ih, ih), (iw, iw), (0, 0)), mode='constant', constant_values=0)  # mode="reflect"
     cropped_image = image[y0:y1, x0:x1]
 
     return cropped_image, new_bbox
@@ -341,7 +341,7 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
                 ]).astype(int)
                 cropped_local_image, cropped_local_bbox = crop_pad_image(image, bbox, border=0.0)
             else:
-                cropped_local_image = np.ones([224, 224, 3], dtype=np.uint8) * 114
+                cropped_local_image = np.zeros([224, 224, 3], dtype=np.uint8)
                 cropped_local_bbox = []
             results[f"bbox_{name}"].append(cropped_local_bbox)
             results[f"cropped_{name}"].append(cropped_local_image)
