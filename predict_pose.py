@@ -1,6 +1,6 @@
 import os
-from typing import List
 from copy import deepcopy
+from typing import List
 
 import cv2
 import mediapipe as mp
@@ -8,9 +8,65 @@ import numpy as np
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from scipy.optimize import linear_sum_assignment
+from ultralytics import YOLO
 
 
-def create_mediapipe_models(checkpoint_folder: str, min_confidence: float = 0.4) -> (object, object, object):
+def crop_frame(image, bounding_box):
+    x, y, w, h = bounding_box
+    cropped_frame = image[y:y + h, x:x + w]
+    return cropped_frame
+
+
+def get_centered_box(keypoints, box_size, scale_factor=1.2):
+    center_x, center_y = np.mean(keypoints, axis=0, dtype=int)
+    half_size = box_size // 2
+    x = center_x - half_size
+    y = center_y - half_size
+    w = box_size
+    h = box_size
+
+    w_padding = int((scale_factor - 1) * w / 2)
+    h_padding = int((scale_factor - 1) * h / 2)
+    x -= w_padding
+    y -= h_padding
+    w += 2 * w_padding
+    h += 2 * h_padding
+
+    return x, y, w, h
+
+
+def get_bounding_box(keypoints, scale_factor=1.2):
+    keypoints = np.round(keypoints).astype(int)
+    x, y, w, h = cv2.boundingRect(keypoints)
+    w_padding = int((scale_factor - 1) * w / 2)
+    h_padding = int((scale_factor - 1) * h / 2)
+    x -= w_padding
+    y -= h_padding
+    w += 2 * w_padding
+    h += 2 * h_padding
+    return x, y, w, h
+
+
+def adjust_bounding_box(bounding_box, image_shape):
+    x, y, w, h = bounding_box
+    ih, iw, _ = image_shape
+
+    # Adjust x-coordinate if the bounding box extends beyond the image's right edge
+    if x + w > iw:
+        x = iw - w
+
+    # Adjust y-coordinate if the bounding box extends beyond the image's bottom edge
+    if y + h > ih:
+        y = ih - h
+
+    # Ensure bounding box's x and y coordinates are not negative
+    x = max(x, 0)
+    y = max(y, 0)
+
+    return x, y, w, h
+
+
+def create_mediapipe_models(checkpoint_folder: str, min_confidence: float = 0.4) -> (object, object, object, object):
     BaseOptions = mp.tasks.BaseOptions
 
     # mediapipe
@@ -18,6 +74,10 @@ def create_mediapipe_models(checkpoint_folder: str, min_confidence: float = 0.4)
     hand_model_path = os.path.join(checkpoint_folder, 'hand_landmarker.task')
     pose_model_path = os.path.join(checkpoint_folder, 'pose_landmarker_full.task')
     face_model_path = os.path.join(checkpoint_folder, 'face_landmarker.task')
+    yolo_model_path = os.path.join(checkpoint_folder, "yolov8n-pose.pt")
+
+    # yolov8
+    yolo_model = YOLO(yolo_model_path)
 
     # define hand model
     hand_options = vision.HandLandmarkerOptions(
@@ -45,7 +105,28 @@ def create_mediapipe_models(checkpoint_folder: str, min_confidence: float = 0.4)
     )
     face_detector = vision.FaceLandmarker.create_from_options(face_options)
 
-    return hand_detector, pose_detector, face_detector
+    return hand_detector, pose_detector, face_detector, yolo_model
+
+
+def yolo_predict(image: np.ndarray, model, min_conf: float = 0.5):
+    yolo_results = model(image, verbose=False)
+
+    bboxes = yolo_results[0].boxes.xyxy
+    keypoints = yolo_results[0].keypoints.xy
+    bboxes = bboxes.cpu().numpy()
+    keypoints = keypoints.cpu().numpy()
+
+    conf = yolo_results[0].boxes.conf
+    conf = conf.cpu().numpy()
+    select_mask_kp = np.sum(keypoints, axis=(1, 2)) > 0.0001
+    select_mask_bb = conf > min_conf
+    select_mask = select_mask_kp & select_mask_bb
+
+    conf = conf[select_mask]
+    bboxes = bboxes[select_mask]
+    keypoints = keypoints[select_mask]
+
+    return bboxes, keypoints, conf
 
 
 def load_video_cv(path: str):
@@ -233,7 +314,7 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
 
         Parameters:
             video (list): A list of images.
-            models (tuple): A tuple containing the Mediapipe models for pose, hand, and face detection.
+            models (tuple): A tuple containing the Mediapipe models for pose, hand, and face detection and yolo model.
             sign_space (int): The desired size of the signing space.
                               Width and height calculated as shoulder distance * sign_space  Default is 4.
 
@@ -241,7 +322,7 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
             (dict): A dictionary containing the processed video data, including images, keypoints, cropped images, cropped keypoints,
         signing space, and bounding boxes for different body parts.
     """
-    hand_detector, pose_detector, face_detector = models
+    hand_detector, pose_detector, face_detector, yolo_model = models
     results = {
         "images": video,
         "keypoints": [],
@@ -256,12 +337,39 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
         "bbox_face": [],
     }
 
+    # yolo predict + crop images
+    yolo_predictions = []
+    for idx, image in enumerate(results["images"]):
+        bboxes, keypoints, confs = yolo_predict(image, yolo_model)
+        yolo_predictions.append([bboxes, keypoints, confs])
+
+    # get signing bbox
+    x0, y0, x1, y1 = [], [], [], []
+    for idx, (image, prediction) in enumerate(zip(results["images"], yolo_predictions)):
+        _, keypoints, _ = prediction
+        if len(keypoints) != 1:
+            continue
+
+        _x0, _y0, _x1, _y1 = new_bbox(image, keypoints[0], lsi=5, rsi=6, sign_space=3)
+
+        x0.append(_x0)
+        y0.append(_y0)
+        x1.append(_x1)
+        y1.append(_y1)
+
+    x0y = np.round(np.median(x0)).astype(int)
+    y0y = np.round(np.median(y0)).astype(int)
+    x1y = np.round(np.median(x1)).astype(int)
+    y1y = np.round(np.median(y1)).astype(int)
+
     # mediapipe predict + signing space
     mp_predictions = []
     x0, y0, x1, y1 = [], [], [], []
     for idx, image in enumerate(results["images"]):
-        ih, iw = image.shape[:2]
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(image))
+        yolo_image = image[y0y:y1y, x0y:x1y]
+
+        ih, iw = yolo_image.shape[:2]
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(yolo_image))
 
         pose_prediction = pose_detector.detect(mp_image)
         hand_prediction = hand_detector.detect(mp_image)
@@ -285,6 +393,9 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
             kp_all_x.extend(x)
             kp_all_y.extend(y)
         kp_all = np.array((kp_all_x, kp_all_y)).T
+
+        kp_all[:, 0] = kp_all[:, 0] + x0y
+        kp_all[:, 1] = kp_all[:, 1] + y0y
 
         if len(kp_all) == 0:
             continue
@@ -310,18 +421,20 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
         y1mp = np.round(np.median(y1)).astype(int)
 
     for idx, (image, prediction) in enumerate(zip(results["images"], mp_predictions)):
-        ih, iw = image.shape[:2]
+        yolo_image = image[y0y:y1y, x0y:x1y]
+        yih, yiw = yolo_image.shape[:2]
+
         cropped_image, pad_bbox = crop_pad_image(image, (x0mp, y0mp, x1mp, y1mp), border=0)
 
         hand_prediction, face_prediction, pose_prediction = prediction
 
-        face_keypoints = keypoints_out_format(face_prediction.face_landmarks, (ih, iw))
-        pose_keypoints = keypoints_out_format(pose_prediction.pose_landmarks, (ih, iw))
+        face_keypoints = keypoints_out_format(face_prediction.face_landmarks, (yih, yiw))
+        pose_keypoints = keypoints_out_format(pose_prediction.pose_landmarks, (yih, yiw))
         hand_keypoints = process_hands(
             hand_prediction.hand_landmarks,
             hand_prediction.handedness,
             pose_keypoints,
-            (ih, iw),
+            (yih, yiw),
             None
         )
 
@@ -332,6 +445,14 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
             'face_landmarks': face_keypoints
         }
 
+        # move kp
+        x_move = x0y
+        y_move = y0y
+        for name in keypoints:
+            if len(keypoints[name]) > 0:
+                keypoints[name][:, 0] += x_move
+                keypoints[name][:, 1] += y_move
+
         # get dino crops
         name_to_keypoints = [
             ("face", face_keypoints),
@@ -340,13 +461,14 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
         ]
         for name, kp in name_to_keypoints:
             if len(kp) > 0:
-                bbox = np.round([
-                    np.min(kp[:, 0]),
-                    np.min(kp[:, 1]),
-                    np.max(kp[:, 0]),
-                    np.max(kp[:, 1])
-                ]).astype(int)
-                cropped_local_image, cropped_local_bbox = crop_pad_image(image, bbox, border=0.0)
+                kp = np.round(kp[:, :2]).astype(int)
+                x, y, w, h = cv2.boundingRect(kp)
+                cropped_local_bbox = get_centered_box(kp, np.max([w, h]), scale_factor=1.2)
+                cropped_local_bbox = adjust_bounding_box(cropped_local_bbox, image.shape)
+                cropped_local_image = crop_frame(image, cropped_local_bbox)
+                x0, y0, w, h = cropped_local_bbox
+                cropped_local_bbox = [x0, y0, x0 + w, y0 + h]
+
             else:
                 cropped_local_image = np.zeros([224, 224, 3], dtype=np.uint8)
                 cropped_local_bbox = []
@@ -362,11 +484,13 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
                 keypoints_cropped[name][:, 0] -= x_move
                 keypoints_cropped[name][:, 1] -= y_move
                 keypoints_cropped[name] = np.round(keypoints_cropped[name], 3).tolist()
+                keypoints[name] = np.round(keypoints[name], 3).tolist()
 
         # save processed data
         results["keypoints"].append(keypoints)
         results["cropped_images"].append(cropped_image)
         results["cropped_keypoints"].append(keypoints_cropped)
         results["sign_space"].append(pad_bbox)
+    results["images"] = video
 
     return results
