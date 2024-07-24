@@ -371,6 +371,15 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
         ih, iw = yolo_image.shape[:2]
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(yolo_image))
 
+        # HACK:
+        # if the YOLO model does not detect anything,
+        # pretend it detects a black square and give it to mediapipe
+        if yolo_image.shape == (0, 0, 3):
+            mp_image = mp.Image(
+                image_format=mp.ImageFormat.SRGB,
+                data=np.zeros(shape=(256, 256, 3), dtype=np.uint8)
+            )
+
         pose_prediction = pose_detector.detect(mp_image)
         hand_prediction = hand_detector.detect(mp_image)
         face_prediction = face_detector.detect(mp_image)
