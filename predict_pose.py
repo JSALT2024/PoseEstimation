@@ -307,7 +307,7 @@ def process_hands(mp_hand_keypoints, mp_handedness, pose_keypoints, image_size, 
     return out
 
 
-def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
+def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4, yolo_sign_space=2) -> dict:
     """
         This function processes a video to detect and extract pose, hand, and face landmarks using Mediapipe models.
         It also calculates the signing space and crops the images accordingly.
@@ -350,7 +350,7 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4) -> dict:
         if len(keypoints) != 1:
             continue
 
-        _x0, _y0, _x1, _y1 = new_bbox(image, keypoints[0], lsi=5, rsi=6, sign_space=3)
+        _x0, _y0, _x1, _y1 = new_bbox(image, keypoints[0], lsi=5, rsi=6, sign_space=yolo_sign_space)
 
         x0.append(_x0)
         y0.append(_y0)
