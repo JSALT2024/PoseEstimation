@@ -339,9 +339,27 @@ def predict_pose(video: List[np.ndarray], models: tuple, sign_space=4, yolo_sign
 
     # yolo predict + crop images
     yolo_predictions = []
+    num_predictions = []
     for idx, image in enumerate(results["images"]):
         bboxes, keypoints, confs = yolo_predict(image, yolo_model)
         yolo_predictions.append([bboxes, keypoints, confs])
+        num_predictions.append(len(bboxes))
+        
+    # no predictions -> add empty values and return
+    if np.sum(num_predictions) == 0:
+        _h, _w = results["images"][0].shape[:2]
+        for idx in range(len(results["images"])):
+            results["keypoints"].append({'pose_landmarks': [], 'right_hand_landmarks': [], 'left_hand_landmarks': [], 'face_landmarks': []})
+            results["cropped_images"].append(results["images"][idx])
+            results["cropped_keypoints"].append({'pose_landmarks': [], 'right_hand_landmarks': [], 'left_hand_landmarks': [], 'face_landmarks': []})
+            results["sign_space"].append([0, 0, _w, _h])
+            results["cropped_left_hand"].append(np.zeros([224, 224, 3], dtype=np.uint8))
+            results["cropped_right_hand"].append(np.zeros([224, 224, 3], dtype=np.uint8))
+            results["cropped_face"].append(np.zeros([224, 224, 3], dtype=np.uint8))
+            results["bbox_left_hand"].append([])
+            results["bbox_right_hand"].append([])
+            results["bbox_face"].append([])    
+        return results
 
     # get signing bbox
     x0, y0, x1, y1 = [], [], [], []
