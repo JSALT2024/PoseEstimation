@@ -1,12 +1,12 @@
-import numpy as np
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
-import os
-import cv2
-import datetime
-import h5py
-import torch
 import json
+import os
+
+import cv2
+import h5py
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+
 from normalization import local_keypoint_normalization, global_keypoint_normalization
 
 
@@ -94,7 +94,7 @@ class How2SignDataset(Dataset):
             right_hand_landmarks = f[video_name]['joints']['right_hand_landmarks'][()]
             pose_landmarks = f[video_name]['joints']['pose_landmarks'][()]
             sentence = f[video_name]['sentence'][()].decode('utf-8')
-            
+
         pose_landmarks = pose_landmarks[:, :25]
         joints["pose_landmarks"] = joints["pose_landmarks"][:, :25]
 
@@ -129,7 +129,7 @@ class How2SignDataset(Dataset):
             additional_landmarks = list(global_landmarks.values())
             if "pose_landmarks" in additional_landmarks:
                 additional_landmarks.remove("pose_landmarks")
-            
+
             keypoints, additional_keypoints = global_keypoint_normalization(
                 joints,
                 "pose_landmarks",
@@ -187,9 +187,9 @@ class How2SignDataset(Dataset):
         cap.release()
         cv2.destroyAllWindows()
         video.release()
-        
-        
-        
+
+
+
 def get_keypoints(json_data):
     right_hand_landmarks = []
     left_hand_landmarks = []
@@ -215,8 +215,8 @@ def get_keypoints(json_data):
             face_landmarks.append(np.zeros((478, 4)))
         else:
             face_landmarks.append(np.array(json_data['joints'][frame_id]['face_landmarks']))
-    
-    
+
+
     pose_landmarks = np.array(pose_landmarks)[:, :25]
     return pose_landmarks, right_hand_landmarks, left_hand_landmarks, face_landmarks
 
@@ -231,17 +231,17 @@ class How2SignDatasetJSON(Dataset):
                  json_folder,
                  kp_normalization: list = [],
                  face_landmarks: str = "YouTubeASL"):
-        
-        
+
+
         json_list = get_json_files(json_folder)
-        
+
         self.video_to_files = {}
         for idx, path in enumerate(json_list):
             name = os.path.basename(path)
             name_split = name.split(".")[:-1]
             clip_name = ".".join(name_split)
             video_name = name_split[0]
-            
+
             if video_name in self.video_to_files:
                 self.video_to_files[video_name].append(path)
             else:
@@ -267,19 +267,19 @@ class How2SignDatasetJSON(Dataset):
                 311, 81, 178, 402,  # inner mouth square
                 78, 308  # inner mouth corners
             ]
-            
+
         self.kp_normalization = kp_normalization
 
     def __getitem__(self, idx):
         video_name = self.video_names[idx]
         clip_paths = self.video_to_files[video_name]
-        
+
         output_data = []
         for clip_path in clip_paths:
             name = os.path.basename(clip_path)
             name_split = name.split(".")
             clip_name = ".".join(name_split[:-1])
-            
+
             clip_data = self.load_data(clip_path)
             clip_data = {"data": clip_data, "video_name": video_name, "clip_name": clip_name}
             output_data.append(clip_data)
@@ -323,7 +323,7 @@ class How2SignDatasetJSON(Dataset):
             additional_landmarks = list(global_landmarks.values())
             if "pose_landmarks" in additional_landmarks:
                 additional_landmarks.remove("pose_landmarks")
-            
+
             keypoints, additional_keypoints = global_keypoint_normalization(
                 joints,
                 "pose_landmarks",

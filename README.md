@@ -38,6 +38,27 @@ python pose_prediction_parallel.py \
  - [ ] Use YOLO to crop smaller box, than expand after MediaPipe
 
 
+## Create h5 features
+### How2Sign
+```shell
+python create_features-hs.py \
+  --dataset_split train \
+  --root_folder data\h2s \
+  --annotation_file data\h2s\how2sign_realigned_train.csv
+```
+
+### YouTubeASL
+```shell
+python create_features-yt.py \
+  --dataset_split train \
+  --root_folder data\yt 
+```
+
+### TODO 
+ - [ ] Merge files
+ - [ ] Describe folder structure
+ - [ ] Add additional info into h5 (signing space, hand_crops...)
+
 
 ## Predict
 ```python
