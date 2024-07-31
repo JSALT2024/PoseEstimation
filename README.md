@@ -16,16 +16,28 @@ wget -O checkpoints/pose_landmarker_lite.task -q https://storage.googleapis.com/
 wget -O checkpoints/face_landmarker.task -q https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
 ```
 
-## Run
+## Run parallel job
 ```shell
+# create 100 index files and process fill index_file_000
+# additional processes can be run in parallel with different index_file
 python pose_prediction_parallel.py \
     --input_folder data/clips \
     --output_folder data/cropped_clips \
-    --index_path data/index_file.csv \
+    --tmp_folder data/tmp_clips \
+    --num_index_files 100 \
+    --index_path data/index_files \
+    --index_file data/index_files/index_file_000.csv \
     --checkpoint_folder checkpoints \
-    --sign_space 5 \
-    --debug
+    --sign_space 4 
 ```
+
+### TODO
+ - [ ] Remove duplicate code 
+ - [ ] Add better logging
+ - [ ] Save more information (similar to predict script)
+ - [ ] Use YOLO to crop smaller box, than expand after MediaPipe
+
+
 
 ## Predict
 ```python
