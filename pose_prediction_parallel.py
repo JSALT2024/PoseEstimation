@@ -227,16 +227,13 @@ def process_hands(mp_hand_keypoints, mp_handedness, pose_keypoints, image_size, 
     return out
 
 
-def predict(video_path, output_folder, workers, sign_space, tmp_folder="", video_size=(512, 512), debug=False):
-    print("video_path", video_path, "output_folder", output_folder, "workers", workers, "sign_space", sign_space,
-          "tmp_folder", tmp_folder)
+def predict(video_path, output_folder, sign_space, tmp_folder="", video_size=(512, 512), debug=False):
     predictions = []
     num_predictions = []
 
     # predict
     images, fps = load_video_cv(video_path)
     print(f"video: {video_path}", f"fps: {fps}", f"frames: {len(images)}", f"frame size: {images[0].shape}")
-    # for idx, image in enumerate(tqdm(images, desc="yolov8 predict")):
     for idx, image in enumerate(images):
         bboxes, keypoints, confs = yolo_predict(image, yolo_model)
 
@@ -262,7 +259,6 @@ def predict(video_path, output_folder, workers, sign_space, tmp_folder="", video
 
     # get signing bbox
     x0, y0, x1, y1 = [], [], [], []
-    # for idx, (image, prediction) in enumerate(tqdm(zip(images, predictions), desc="get signing space")):
     for idx, (image, prediction) in enumerate(zip(images, predictions)):
         _, keypoints, _ = prediction
         if len(keypoints) != 1:
@@ -282,9 +278,7 @@ def predict(video_path, output_folder, workers, sign_space, tmp_folder="", video
 
     # mediapipe predict
     mp_predictions = []
-    # new_video_frames = []
     x0, y0, x1, y1 = [], [], [], []
-    # for idx, (image, prediction) in enumerate(tqdm(zip(images, predictions), desc="mediapipe prediction")):
     for idx, (image, prediction) in enumerate(zip(images, predictions)):
         cropped_image = image[y0y:y1y, x0y:x1y]
         ih, iw = cropped_image.shape[:2]
@@ -328,7 +322,7 @@ def predict(video_path, output_folder, workers, sign_space, tmp_folder="", video
     x1mp = np.round(np.median(x1)).astype(int)
     y1mp = np.round(np.median(y1)).astype(int)
 
-    # save predictionas and video
+    # save predictions and video
     file_name = ".".join(os.path.basename(video_path).split(".")[:-1])
     keypoints_path = os.path.join(output_folder, f"{file_name}.json")
     video_path = os.path.join(output_folder, f"{file_name}.mp4")
@@ -337,11 +331,9 @@ def predict(video_path, output_folder, workers, sign_space, tmp_folder="", video
         keypoints_path = os.path.join(tmp_folder, f"{file_name}.json")
         video_path = os.path.join(tmp_folder, f"{file_name}.mp4")
 
-    result = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps,
-                             video_size)  # frames[0].shape[:2]
+    result = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, video_size)
 
     predictions_out = {}
-    # for idx, (image, prediction, prediction_yolo) in enumerate(tqdm(zip(images, mp_predictions, predictions), desc="crop video")):
     for idx, (image, prediction, prediction_yolo) in enumerate(zip(images, mp_predictions, predictions)):
         cropped_image = image[y0y:y1y, x0y:x1y]
         ih, iw = cropped_image.shape[:2]
@@ -435,16 +427,20 @@ def predict(video_path, output_folder, workers, sign_space, tmp_folder="", video
 def get_args_parser():
     parser = argparse.ArgumentParser('', add_help=False)
 
-    parser.add_argument('--input_folder', type=str)
-    parser.add_argument('--output_folder', type=str)
-    parser.add_argument('--index_path', type=str)
-    parser.add_argument('--index_file', type=str, default="")
-    parser.add_argument('--tmp_folder', type=str)
-    parser.add_argument('--checkpoint_folder', default="", type=str)
-
-    parser.add_argument('--workers', type=int, default=1)
-    parser.add_argument('--sign_space', type=int, default=5)
-    parser.add_argument('--debug', action='store_true', default=False)
+    parser.add_argument('--input_folder', type=str, help="Folder with clips.")
+    parser.add_argument('--output_folder', type=str, help="Folder where to save cropped clips.")
+    parser.add_argument('--index_path', type=str, help="Path to folder with index files, if index files does not "
+                                                       "exist, they will be created.")
+    parser.add_argument('--index_file', type=str, default="", help="Path to specific index file. If not provided file "
+                                                                   "will be chosen randomly form index_path after "
+                                                                   "each clip.")
+    parser.add_argument('--num_index_files', type=str, default="", help="Number of index files to generate.")
+    parser.add_argument('--tmp_folder', type=str, help="If provided, cropped clips are first saved in this folder and "
+                                                       "than copied to input_folder.")
+    parser.add_argument('--checkpoint_folder', default="", type=str, help="Path to folder with MediaPipe checkpoints.")
+    parser.add_argument('--sign_space', type=int, default=4, help="Size of the signing space (n * "
+                                                                  "distance_between_shoulders)")
+    parser.add_argument('--debug', action='store_true', default=False, help="Save clip with predicted keypoints.")
 
     return parser
 
@@ -508,7 +504,7 @@ if __name__ == "__main__":
     processed_videos = 0
     failed_videos = 0
 
-    num_index_files = 500
+    num_index_files = args.num_index_files
 
     while True:
         start_time = time.time()
@@ -583,7 +579,7 @@ if __name__ == "__main__":
 
         # predict
         try:
-            predictions = predict(video_path, output_folder, args.workers, args.sign_space, tmp_folder=args.tmp_folder,
+            predictions = predict(video_path, output_folder, args.sign_space, tmp_folder=args.tmp_folder,
                                   debug=args.debug)
             if "state" in predictions:
                 print(f"Multiple people in video: {video_path}")
