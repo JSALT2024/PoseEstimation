@@ -2,6 +2,24 @@ import numpy as np
 import os
 import pandas as pd
 from tqdm import tqdm
+import cv2
+from typing import List
+
+
+def load_video_cv(path: str) -> (List[np.ndarray], float):
+    """Load a video."""
+    video = []
+
+    cap = cv2.VideoCapture(path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    ret = True
+    while ret:
+        ret, img = cap.read()
+        if ret:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            video.append(img)
+    cap.release()
+    return video, fps
 
 
 def crop_pad_image(image: np.ndarray, bbox: np.ndarray, border: float = 0.25, color: int = 114) -> (np.ndarray, list):
@@ -55,7 +73,7 @@ def crop_pad_image(image: np.ndarray, bbox: np.ndarray, border: float = 0.25, co
     return cropped_image, new_bbox
 
 
-def get_state_counts(index_folder: str):
+def get_state_counts(index_folder: str) -> str:
     """
     Load index files from a given folder and count the occurrences of each state value.
 
@@ -66,10 +84,13 @@ def get_state_counts(index_folder: str):
     index_files = [pd.read_csv(file, dtype={"file_names": str, "state": float}) for file in tqdm(index_files)]
 
     index_file = pd.concat(index_files)
-    print(len(index_file))
+    # print(len(index_file))
+    text = ""
     counts = dict(index_file["state"].value_counts())
     for state, count in counts.items():
-        print(f"State {state}:   {count}")
+        text += f"State {state}:   {count}\n"
+        # print(f"State {state}:   {count}")
+    return text
 
 
 def reset_state(index_file: str, old_state: int, new_state: int):
@@ -90,5 +111,3 @@ def reset_state(index_file: str, old_state: int, new_state: int):
         index_file = pd.read_csv(file, dtype={"file_names": str, "state": float})
         index_file.loc[index_file["state"] == old_state, 'state'] = new_state
         index_file.to_csv(file, index=False)
-
-

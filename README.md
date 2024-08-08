@@ -3,8 +3,9 @@
 ## Requirements (not complete)
 ```shell
 pip install ultralytics==8.2.18
-pip install decord
 pip install mediapipe
+
+# pip install decord
 ```
 
 
@@ -16,29 +17,56 @@ wget -O checkpoints/pose_landmarker_lite.task -q https://storage.googleapis.com/
 wget -O checkpoints/face_landmarker.task -q https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
 ```
 
-## Run parallel job
+## Predict keypoints in parallel
+### Descriptions:
+
+ - input: folder with clips
+ - output: spatial cropped clip with size (512, 512) and predicted keypoints in json file with same name as clip
+ - crop is created based on sign space around the person
+ - if input clip is not square, shorter side will be padded with (114,114,114) color
+ - clips without predictions or multiple predictions are **skipped**
+ - script can run in parallel, each process can access its own index file or select index files randomly
+ 
+
+
+Prepare index files in advance (not necessary).
+```python
+from pose_prediction_parallel import create_index_files
+clip_folder = ""
+index_folder = ""
+num_index_files = 100
+
+create_index_files(clip_folder, index_folder, num_index_files)
+```
+
+Run multiple parallel jobs. If index files does not exist, first job will crete them.
+If `index_file_id` is not specified, clips will be processed randomly.
 ```shell
 # create 100 index files and process fill index_file_000
-# additional processes can be run in parallel with different index_file
+# additional processes can be run in parallel with different index_file_id
 python pose_prediction_parallel.py \
     --input_folder data/clips \
     --output_folder data/cropped_clips \
     --tmp_folder data/tmp_clips \
     --num_index_files 100 \
     --index_path data/index_files \
-    --index_file data/index_files/index_file_000.csv \
+    --index_file_id 0 \
     --checkpoint_folder checkpoints \
     --sign_space 4 
 ```
 
-### TODO
- - [ ] Remove duplicate code 
- - [ ] Add better logging
- - [ ] Save more information (similar to predict script)
- - [ ] Use YOLO to crop smaller box, than expand after MediaPipe
+Parallel jobs can be run as array job
+PBS example:
+```shell
+#PBS -J 0-9
+
+python pose_prediction_parallel.py \
+  --index_file_id "$PBS_ARRAY_INDEX"
+  # ...
+```
 
 
-## Create h5 features
+## Convert predictions to h5
 ### How2Sign
 ```shell
 python create_features-hs.py \
@@ -53,12 +81,6 @@ python create_features-yt.py \
   --dataset_split train \
   --root_folder data\yt 
 ```
-
-### TODO 
- - [ ] Merge files
- - [ ] Describe folder structure
- - [ ] Add additional info into h5 (signing space, hand_crops...)
-
 
 ## Predict
 ```python
