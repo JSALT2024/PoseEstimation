@@ -21,9 +21,9 @@ def save_to_h5(features_list_h5, label, index_dataset, chunk_batch, chunk_size):
 def add_to_h5(clip_name, clip_features, index_dataset, chunk_batch, chunk_size):
     feature_shape = clip_features.shape
     features_list_h5 = video_h5.create_dataset(
-        clip_name, 
-        shape=feature_shape, 
-        maxshape=(None,feature_shape[-1]), 
+        clip_name,
+        shape=feature_shape,
+        maxshape=(None, feature_shape[-1]),
         dtype=np.dtype('float16')
     )
     num_full_chunks = len(clip_features) // chunk_size
@@ -34,41 +34,7 @@ def add_to_h5(clip_name, clip_features, index_dataset, chunk_batch, chunk_size):
                                                 chunk_size)
     if last_chunk_size > 0:
         feature = clip_features[index_dataset:index_dataset + last_chunk_size]
-        index_dataset, chunk_batch = save_to_h5(features_list_h5, feature, index_dataset, chunk_batch,
-                                                last_chunk_size)
-
-def get_keypoints(json_data):
-    right_hand_landmarks = []
-    left_hand_landmarks = []
-    face_landmarks = []
-    pose_landmarks = []
-    for frame_id in json_data['joints']:
-        if len(json_data['joints'][frame_id]['pose_landmarks']) == 0:
-            pose_landmarks.append(np.zeros((33, 4)))
-        else:
-            pose_landmarks.append(np.array(json_data['joints'][frame_id]['pose_landmarks']))
-
-        if len(json_data['joints'][frame_id]['right_hand_landmarks']) == 0:
-            right_hand_landmarks.append(np.zeros((21, 4)))
-        else:
-            right_hand_landmarks.append(np.array(json_data['joints'][frame_id]['right_hand_landmarks']))
-
-        if len(json_data['joints'][frame_id]['left_hand_landmarks']) == 0:
-            left_hand_landmarks.append(np.zeros((21, 4)))
-        else:
-            left_hand_landmarks.append(np.array(json_data['joints'][frame_id]['left_hand_landmarks']))
-
-        if len(json_data['joints'][frame_id]['face_landmarks']) == 0:
-            face_landmarks.append(np.zeros((478, 4)))
-        else:
-            face_landmarks.append(np.array(json_data['joints'][frame_id]['face_landmarks']))
-
-    return pose_landmarks, right_hand_landmarks, left_hand_landmarks, face_landmarks
-
-
-def get_json_files(json_dir):
-    json_files = [os.path.join(json_dir, json_file) for json_file in os.listdir(json_dir) if json_file.endswith('.json')]
-    return json_files
+        _ = save_to_h5(features_list_h5, feature, index_dataset, chunk_batch, last_chunk_size)
 
 
 def get_args_parser():
@@ -119,10 +85,10 @@ if __name__ == "__main__":
             "local-right_hand_landmarks",
             "local-left_hand_landmarks",
             "local-face_landmarks",
-            ]
-    )    
+        ]
+    )
     print(len(dataset))
-            
+
     # save features
     f_out = h5py.File(os.path.join(args.output_folder, output_file_name), 'w')
 
@@ -130,7 +96,7 @@ if __name__ == "__main__":
     for data in tqdm(dataset):
         video_name = data[0]["video_name"]
         video_h5 = f_out.create_group(video_name)
-        
+
         for clip in data:
             features = clip["data"]
             clip_name = clip["clip_name"]
@@ -150,5 +116,3 @@ if __name__ == "__main__":
 
     with open(os.path.join(args.output_folder, output_features_name), "w") as f:
         json.dump(metadata, f)
-
-
