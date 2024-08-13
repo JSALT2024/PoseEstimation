@@ -18,7 +18,7 @@ from ultralytics import YOLO
 
 from utils import crop_pad_image, load_video_cv, get_state_counts
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 VisionRunningMode = mp.tasks.vision.RunningMode
 BaseOptions = mp.tasks.BaseOptions
 
@@ -441,7 +441,7 @@ def predict(
             if len(keypoints[name]) == 0:
                 keypoints[name] = np.array([])
                 continue
-            keypoints[name] = np.round(keypoints[name][:, :2], 3)
+            keypoints[name] = keypoints[name][:, :2]
 
         # move kp
         x_move = x0y
@@ -463,7 +463,7 @@ def predict(
                 keypoints_cropped[name][:, 1] -= y_move
 
             keypoints_cropped[name] = np.round(keypoints_cropped[name], 3).tolist()
-            keypoints[name] = keypoints[name].tolist()
+            keypoints[name] = np.round(keypoints[name], 3) .tolist()
 
         # get dino crops
         name_to_keypoints = [
@@ -532,6 +532,7 @@ if __name__ == "__main__":
     output_folder = args.output_folder
     index_folder = args.index_path
     os.makedirs(index_folder, exist_ok=True)
+    os.makedirs(output_folder, exist_ok=True)
 
     run_stats = {
         "all_times": [],

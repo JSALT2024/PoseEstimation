@@ -40,12 +40,18 @@ def add_to_h5(clip_name, clip_features, index_dataset, chunk_batch, chunk_size):
 def get_args_parser():
     parser = argparse.ArgumentParser('', add_help=False)
 
-    parser.add_argument('--input_folder', type=str)
-    parser.add_argument('--output_folder', type=str)
-    parser.add_argument('--dataset_name', type=str)
-    parser.add_argument('--split_name', default="train", type=str)
+    parser.add_argument('--input_folder', type=str, help='Path to folder with video and json files.')
+    parser.add_argument('--output_folder', type=str, help="Data will be saved in this folder.")
+    parser.add_argument('--dataset_name', type=str, help="Name of the dataset. Used only for naming of the "
+                                                         "output file.")
+    parser.add_argument('--split_name', default="train", type=str, help="Name of the data subset examples: dev, "
+                                                                        "train, test. Used only for naming of the "
+                                                                        "output file.")
 
-    parser.add_argument('--annotation_file', type=str)
+    parser.add_argument('--annotation_file', type=str, help="If the name is not in the format: "
+                                                            "'video_name.time_stamp.mp4' and can't be parsed, "
+                                                            "annotation file with: SENTENCE_NAME and VIDEO_ID columns "
+                                                            "should be provided.")
 
     return parser
 

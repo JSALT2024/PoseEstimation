@@ -66,23 +66,34 @@ python pose_prediction_parallel.py \
 ```
 
 
-## Convert predictions to h5
-### How2Sign
-```shell
-python create_features-hs.py \
-  --dataset_split train \
-  --root_folder data\h2s \
-  --annotation_file data\h2s\how2sign_realigned_train.csv
-```
+## Convert features to h5
+Descriptions:
+ - Converts features from json files into h5
+ - Structure of the h5: `{"video_name_00": {clip_name_00: features_00_00, clip_name_01: features_00_01, ...}, ...}`
+ - Shape of the features: `number of frames` x `embedding dimension`
+ - Face keypoints are reduced (see `data/h2s.py -> How2SignDatasetJSON.face_landmarks`)
+ - Keypoint's prediction scripts do not save leg keypoints
+ - Keypoints are normalized before saving:
+   - global-pose_landmarks
+   - local-right_hand_landmarks
+   - local-left_hand_landmarks
+   - local-face_landmarks
+ - Local normalization: moves keypoints to origin adds square padding and normalizes the values in local space -> captures local shape, independent of position in space and scale
+ - Global normalization: keypoints are normalized in relation to signing space -> captures absolute position and relation between parts
+ - If the name of the clips is not in the format: `video_name.time_stamp.mp4` annotation file with columns `SENTENCE_NAME` and `VIDEO_ID` should be provided
 
-### YouTubeASL
 ```shell
-python create_features-yt.py \
-  --dataset_split train \
-  --root_folder data\yt 
+python create_features.py \
+  --input_folder data/cropped_clips
+  --output_folder data/features
+  --dataset_name h2s \
+  --split_name train \
+  --annotation_file data\how2sign_realigned_train.csv   # only if the name is in bad format
 ```
 
 ## Predict
+Descriptions:
+ - Prediction script for demo
 ```python
 from predict_pose import predict_pose, create_mediapipe_models#
 
