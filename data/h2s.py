@@ -93,15 +93,13 @@ class How2SignDatasetJSON(Dataset):
             keypoints_meta = json.load(file)
         pose_landmarks, right_hand_landmarks, left_hand_landmarks, face_landmarks = get_keypoints(keypoints_meta)
         joints = {
-            'face_landmarks': np.array(face_landmarks),
+            'face_landmarks': np.array(face_landmarks)[:, self.face_landmarks, :],
             'left_hand_landmarks': np.array(left_hand_landmarks),
             'right_hand_landmarks': np.array(right_hand_landmarks),
             'pose_landmarks': np.array(pose_landmarks)
         }
 
         if self.kp_normalization:
-            joints["face_landmarks"] = joints["face_landmarks"][:, self.face_landmarks, :]
-
             local_landmarks = {}
             global_landmarks = {}
 
@@ -140,13 +138,9 @@ class How2SignDatasetJSON(Dataset):
                 data.append(all_landmarks[idx])
 
             data = np.concatenate(data, axis=1)
-            data = data.reshape(data.shape[0], -1)
         else:
-            face_landmarks = face_landmarks[:, self.face_landmarks, 0:2]  # select only wanted KPI and  x, y
-            left_hand_landmarks = left_hand_landmarks[:, :, 0:2]
-            right_hand_landmarks = right_hand_landmarks[:, :, 0:2]
-            pose_landmarks = pose_landmarks[:, :, 0:2]
+            data = [joints["pose_landmarks"], joints["right_hand_landmarks"], joints["left_hand_landmarks"], joints["face_landmarks"]]
+            data = np.concatenate(data,  axis=1)
+        data = data.reshape(data.shape[0], -1)
 
-            data = np.concatenate((pose_landmarks, right_hand_landmarks, left_hand_landmarks, face_landmarks),
-                                  axis=1).reshape(len(face_landmarks), 214)
         return data

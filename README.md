@@ -66,13 +66,13 @@ python pose_prediction_parallel.py \
 ```
 
 
-## Convert features to h5
+## Create normalized keypoint feature h5 dataset
 Descriptions:
  - Converts features from json files into h5
  - Structure of the h5: `{"video_name_00": {clip_name_00: features_00_00, clip_name_01: features_00_01, ...}, ...}`
  - Shape of the features: `number of frames` x `embedding dimension`
  - Face keypoints are reduced (see `data/h2s.py -> How2SignDatasetJSON.face_landmarks`)
- - Keypoint's prediction scripts do not save leg keypoints
+ - Keypoint prediction scripts does not save leg keypoints
  - Keypoints are normalized before saving:
    - global-pose_landmarks
    - local-right_hand_landmarks
