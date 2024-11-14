@@ -503,7 +503,7 @@ def get_args_parser():
     parser.add_argument('--output_folder', type=str, help="Folder where to save cropped clips.")
     parser.add_argument('--index_path', type=str, help="Path to folder with index files, if index files does not "
                                                        "exist, they will be created.")
-    parser.add_argument('--index_file_id', type=int, default="", help="Id of specific index file. If not provided file "
+    parser.add_argument('--index_file_id', type=int, help="Id of specific index file. If not provided file "
                                                                       "will be chosen randomly form index_path after "
                                                                       "each clip.")
     parser.add_argument('--num_index_files', type=int, default="", help="Number of index files to generate.")
@@ -511,6 +511,8 @@ def get_args_parser():
                                                        "than copied to input_folder.")
     parser.add_argument('--checkpoint_folder', default="", type=str, help="Path to folder with MediaPipe checkpoints.")
     parser.add_argument('--sign_space', type=int, default=4, help="Size of the signing space (n * "
+                                                                  "distance_between_shoulders)")
+    parser.add_argument('--yolo_sign_space', type=int, default=2, help="Size of the signing space (n * "
                                                                   "distance_between_shoulders)")
     parser.add_argument('--debug', action='store_true', default=False, help="Save clip with predicted keypoints.")
 
@@ -607,8 +609,8 @@ if __name__ == "__main__":
             prediction = predict(
                 video,
                 models,
-                4,
-                2,
+                args.sign_space,
+                args.yolo_sign_space,
                 yolo_min_confidence,
                 single_person_frames,
                 no_person_frames
