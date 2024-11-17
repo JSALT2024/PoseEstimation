@@ -52,7 +52,8 @@ python pose_prediction_parallel.py \
     --index_path data/index_files \
     --index_file_id 0 \
     --checkpoint_folder checkpoints \
-    --sign_space 4 
+    --sign_space 4 \
+    --yolo_sign_space 4
 ```
 
 Parallel jobs can be run as array job
@@ -83,7 +84,7 @@ Descriptions:
  - If the name of the clips is not in the format: `video_name.time_stamp.mp4` annotation file with columns `SENTENCE_NAME` and `VIDEO_ID` should be provided
 
 ```shell
-python create_features.py \
+python create_keypoint_features.py \
   --input_folder data/cropped_clips
   --output_folder data/features
   --dataset_name h2s \

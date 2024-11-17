@@ -510,9 +510,9 @@ def get_args_parser():
     parser.add_argument('--tmp_folder', type=str, help="If provided, cropped clips are first saved in this folder and "
                                                        "than copied to input_folder.")
     parser.add_argument('--checkpoint_folder', default="", type=str, help="Path to folder with MediaPipe checkpoints.")
-    parser.add_argument('--sign_space', type=int, default=4, help="Size of the signing space (n * "
+    parser.add_argument('--sign_space', type=float, default=4, help="Size of the signing space (n * "
                                                                   "distance_between_shoulders)")
-    parser.add_argument('--yolo_sign_space', type=int, default=2, help="Size of the signing space (n * "
+    parser.add_argument('--yolo_sign_space', type=float, default=4, help="Size of the signing space (n * "
                                                                   "distance_between_shoulders)")
     parser.add_argument('--debug', action='store_true', default=False, help="Save clip with predicted keypoints.")
 
@@ -564,7 +564,7 @@ if __name__ == "__main__":
             idx = random.randint(0, num_files - 1)
 
             # get index file path
-            if args.index_file_id:
+            if args.index_file_id is not None:
                 index_path = os.path.join(index_folder, f"index_file_{args.index_file_id:03d}.csv")
             else:
                 index_path = index_files[idx]
