@@ -45,7 +45,7 @@ def get_json_files(json_dir):
     return json_files
 
 
-class How2SignDatasetJSON(Dataset):
+class KeypointDatasetJSON(Dataset):
     def __init__(
             self,
             json_folder: str,

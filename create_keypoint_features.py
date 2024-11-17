@@ -6,7 +6,7 @@ import os
 import pandas as pd
 import argparse
 
-from data.h2s import How2SignDatasetJSON
+from data.keypoint_dataset import KeypointDatasetJSON
 
 
 def save_to_h5(features_list_h5, label, index_dataset, chunk_batch, chunk_size):
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     if args.normalization == "default":
         normalization = default_normalization
 
-    dataset = How2SignDatasetJSON(
+    dataset = KeypointDatasetJSON(
         args.input_folder,
         clip_to_video,
         kp_normalization=normalization
