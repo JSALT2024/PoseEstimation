@@ -69,6 +69,7 @@ if __name__ == "__main__":
     clip_to_video = {}
     clip_names = os.listdir(args.input_folder)
     clip_names = [file for file in clip_names if file.endswith(".mp4")]
+    clip_names.sort()
     for idx in range(len(clip_names)):
         name_split = clip_names[idx].split(".")[:-1]
         clip_names[idx] = ".".join(name_split)
