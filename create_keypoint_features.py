@@ -52,10 +52,8 @@ def get_args_parser():
                                                             "'video_name.time_stamp.mp4' and can't be parsed, "
                                                             "annotation file with: SENTENCE_NAME and VIDEO_ID columns "
                                                             "should be provided.")
-    parser.add_argument('--dont_normalize', type=bool, action="store_false", default=True, help='If True, keypoints '
-                                                                                                'will be normalized '
-                                                                                                'according to sign '
-                                                                                                'space')
+    parser.add_argument('--normalization', type=str, default="default",
+                        choices=["none", "default"],  help='How to normalize keypoints (local or global)')
     return parser
 
 
@@ -86,14 +84,17 @@ if __name__ == "__main__":
             clip_to_video[name] = video_name
 
     # load dataset
-    normalization = [
+    default_normalization = (
             "global-pose_landmarks",
             "local-right_hand_landmarks",
             "local-left_hand_landmarks",
             "local-face_landmarks",
-        ]
-    if args.dont_normalize:
-        normalization = None
+    )
+
+    normalization = None
+    if args.normalization == "default":
+        normalization = default_normalization
+
     dataset = How2SignDatasetJSON(
         args.input_folder,
         clip_to_video,

@@ -7,13 +7,13 @@ from torch.utils.data import Dataset
 from .normalization import local_keypoint_normalization, global_keypoint_normalization
 
 
-def get_keypoints(json_data):
+def get_keypoints(json_data, data_key='cropped_keypoints'):
     right_hand_landmarks = []
     left_hand_landmarks = []
     face_landmarks = []
     pose_landmarks = []
 
-    keypoints = json_data['cropped_keypoints']
+    keypoints = json_data[data_key]
     for frame_id in range(len(keypoints)):
         if len(keypoints[frame_id]['pose_landmarks']) == 0:
             pose_landmarks.append(np.zeros((33, 2)))
@@ -46,7 +46,13 @@ def get_json_files(json_dir):
 
 
 class How2SignDatasetJSON(Dataset):
-    def __init__(self, json_folder: str, clip_to_video: dict, kp_normalization: list = []):
+    def __init__(
+            self,
+            json_folder: str,
+            clip_to_video: dict,
+            kp_normalization: tuple = (),
+            data_key: str = "cropped_keypoints"
+    ):
         json_list = get_json_files(json_folder)
         self.clip_to_video = clip_to_video
         self.video_to_files = {}
@@ -68,6 +74,7 @@ class How2SignDatasetJSON(Dataset):
             282, 285, 291, 294, 311, 323, 362, 386, 397, 402, 405, 468, 473
         ]
         self.kp_normalization = kp_normalization
+        self.data_key = data_key
 
     def __getitem__(self, idx):
         video_name = self.video_names[idx]
@@ -91,7 +98,8 @@ class How2SignDatasetJSON(Dataset):
     def load_data(self, file_path):
         with open(file_path, 'r') as file:
             keypoints_meta = json.load(file)
-        pose_landmarks, right_hand_landmarks, left_hand_landmarks, face_landmarks = get_keypoints(keypoints_meta)
+        keypoints = get_keypoints(keypoints_meta, data_key=self.data_key)
+        pose_landmarks, right_hand_landmarks, left_hand_landmarks, face_landmarks = keypoints
         joints = {
             'face_landmarks': np.array(face_landmarks)[:, self.face_landmarks, :],
             'left_hand_landmarks': np.array(left_hand_landmarks),
@@ -139,8 +147,9 @@ class How2SignDatasetJSON(Dataset):
 
             data = np.concatenate(data, axis=1)
         else:
-            data = [joints["pose_landmarks"], joints["right_hand_landmarks"], joints["left_hand_landmarks"], joints["face_landmarks"]]
-            data = np.concatenate(data,  axis=1)
+            data = [joints["pose_landmarks"], joints["right_hand_landmarks"], joints["left_hand_landmarks"],
+                    joints["face_landmarks"]]
+            data = np.concatenate(data, axis=1)
         data = data.reshape(data.shape[0], -1)
 
         return data
