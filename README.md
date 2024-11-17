@@ -92,6 +92,30 @@ python create_keypoint_features.py \
   --annotation_file data\how2sign_realigned_train.csv   # only if the name is in bad format
 ```
 
+## Keypoint dataset
+`data/keypoint_dataset.py` -> `KeypointDatasetJSON`
+Description:
+   - Load and normalize keypoints from json files
+
+Output:
+   - List of clip keypoints for one video
+```python
+# output example
+[
+   {
+      'data': np.empty([n_frames_00, 208]),
+      'video_name': 'video_name_00',
+      'clip_name': 'clip_name_00'
+   },
+   {
+      'data': np.empty([n_frames_01, 208]),
+      'video_name': 'video_name_00',
+      'clip_name': 'clip_name_01'
+   },
+]
+```
+
+
 ## Predict
 Descriptions:
  - Prediction script for demo
