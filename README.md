@@ -3,7 +3,7 @@
 ## Requirements (not complete)
 ```shell
 pip install ultralytics==8.2.18
-pip install mediapipe
+pip install mediapipe==0.10.11
 
 # pip install decord
 ```
