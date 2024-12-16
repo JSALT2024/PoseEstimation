@@ -3,7 +3,7 @@
 ## Requirements (not complete)
 ```shell
 pip install ultralytics==8.2.18
-pip install mediapipe
+pip install mediapipe==0.10.11
 
 # pip install decord
 ```
@@ -13,7 +13,7 @@ pip install mediapipe
 ```shell
 mkdir checkpoints
 wget -O checkpoints/hand_landmarker.task -q https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
-wget -O checkpoints/pose_landmarker_lite.task -q https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task
+wget -O checkpoints/pose_landmarker_full.task -q https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task
 wget -O checkpoints/face_landmarker.task -q https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
 ```
 
