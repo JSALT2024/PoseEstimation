@@ -131,5 +131,5 @@ models = create_mediapipe_models(checkpoint_folder)
 
 # predict
 video = []
-prediction = predict_pose(video, models, 4)
+prediction = predict_pose(video, models, sign_space=4, yolo_sign_space=4)
 ```
