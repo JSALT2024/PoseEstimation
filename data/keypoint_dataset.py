@@ -54,7 +54,7 @@ class KeypointDatasetJSON(Dataset):
     def __init__(
             self,
             json_folder: str,
-            clip_to_video: dict,
+            clip_to_video: dict = None,
             kp_normalization: tuple = (),
             kp_normalization_method="sign_space",
             data_key: str = "cropped_keypoints",
@@ -65,6 +65,7 @@ class KeypointDatasetJSON(Dataset):
         Args:
             json_folder: Folder containing raw keypoints in json files.
             clip_to_video: A mapping from clip names to video names.
+                           If None each json file will be considered as separate clip.
             kp_normalization: Order and type of normalization tha will be used for individual keypoint groups.
                               For example: ("global-pose_landmarks", "local-face_landmarks")
                                 - global normalization for pose and local for face
@@ -79,19 +80,23 @@ class KeypointDatasetJSON(Dataset):
             missing_values: What value to use for missing values.
         """
         json_list = get_json_files(json_folder)
-        self.clip_to_video = clip_to_video
         self.video_to_files = {}
         for idx, path in enumerate(json_list):
             name = os.path.basename(path)
             name_split = name.split(".")[:-1]
             clip_name = ".".join(name_split)
-            video_name = clip_to_video[clip_name]
+
+            if clip_to_video is None:
+                video_name = clip_name
+            else:
+                video_name = clip_to_video[clip_name]
 
             if video_name in self.video_to_files:
                 self.video_to_files[video_name].append(path)
             else:
                 self.video_to_files[video_name] = [path]
         self.video_names = list(self.video_to_files.keys())
+        self.video_name_to_idx = {name: idx for idx, name in enumerate(self.video_to_files)}
 
         # define keypoint indices for normalization
         self.face_landmarks = [
@@ -207,7 +212,13 @@ class KeypointDatasetJSON(Dataset):
         data = data.reshape(data.shape[0], -1)
         return data
 
-    def __getitem__(self, idx):
+    def get_clip_data(self, clip_name: str) -> np.ndarray:
+        """get clip data by its name"""
+        idx = self.video_name_to_idx[clip_name]
+        clip_data = self[idx]
+        return clip_data[0]["data"]
+
+    def __getitem__(self, idx: int) -> list:
         video_name = self.video_names[idx]
         clip_paths = self.video_to_files[video_name]
 
