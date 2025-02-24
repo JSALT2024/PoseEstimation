@@ -91,8 +91,8 @@ def global_keypoint_normalization(
     frames_keypoints[:, :, 0] -= center_x[:, np.newaxis]
     frames_keypoints[:, :, 1] -= center_y[:, np.newaxis]
 
-    #frames_keypoints[:, :, 0] /= sign_area_size[:, 1, np.newaxis]
-    #frames_keypoints[:, :, 1] /= sign_area_size[:, 0, np.newaxis]
+    # frames_keypoints[:, :, 0] /= sign_area_size[:, 1, np.newaxis]
+    # frames_keypoints[:, :, 1] /= sign_area_size[:, 0, np.newaxis]
     frames_keypoints[:, :, 0] = safe_divide(frames_keypoints[:, :, 0], sign_area_size[:, 0, np.newaxis])
     frames_keypoints[:, :, 1] = safe_divide(frames_keypoints[:, :, 1], sign_area_size[:, 1, np.newaxis])
 
@@ -107,11 +107,55 @@ def global_keypoint_normalization(
         add_frames_keypoints[:, :, 0] -= center_x[:, np.newaxis]
         add_frames_keypoints[:, :, 1] -= center_y[:, np.newaxis]
 
-        #add_frames_keypoints[:, :, 0] /= sign_area_size[:, 1, np.newaxis]
-        #add_frames_keypoints[:, :, 1] /= sign_area_size[:, 0, np.newaxis]
+        # add_frames_keypoints[:, :, 0] /= sign_area_size[:, 1, np.newaxis]
+        # add_frames_keypoints[:, :, 1] /= sign_area_size[:, 0, np.newaxis]
         add_frames_keypoints[:, :, 0] = safe_divide(add_frames_keypoints[:, :, 0], sign_area_size[:, 0, np.newaxis])
         add_frames_keypoints[:, :, 1] = safe_divide(add_frames_keypoints[:, :, 1], sign_area_size[:, 1, np.newaxis])
 
         add_landmarks[add_landmarks_name] = add_frames_keypoints
 
     return frames_keypoints, add_landmarks
+
+
+def yasl_keypoint_normalization(frames_keypoints: np.ndarray, select_idx: list = []) -> np.ndarray:
+    """Normalize all values to be in a unit box across the clip."""
+    if select_idx:
+        frames_keypoints = frames_keypoints[:, select_idx, :]
+
+    # move to origin
+    xmin = np.min(frames_keypoints[:, :, 0])
+    ymin = np.min(frames_keypoints[:, :, 1])
+
+    frames_keypoints[:, :, 0] -= xmin
+    frames_keypoints[:, :, 1] -= ymin
+
+    # normalize to [0, 1]
+    xmax = np.max(frames_keypoints[:, :, 0])
+    ymax = np.max(frames_keypoints[:, :, 1])
+
+    frames_keypoints[:, :, 0] = safe_divide(frames_keypoints[:, :, 0], xmax)
+    frames_keypoints[:, :, 1] = safe_divide(frames_keypoints[:, :, 1], ymax)
+
+    return frames_keypoints
+
+
+def yasl_keypoint_normalization2(frames_keypoints: np.ndarray, select_idx: list = []) -> np.ndarray:
+    """Normalize all values to be in a unit box in each frame."""
+    if select_idx:
+        frames_keypoints = frames_keypoints[:, select_idx, :]
+
+    # move to origin
+    xmin = np.min(frames_keypoints[:, :, 0], axis=1)
+    ymin = np.min(frames_keypoints[:, :, 1], axis=1)
+
+    frames_keypoints[:, :, 0] -= xmin[:, np.newaxis]
+    frames_keypoints[:, :, 1] -= ymin[:, np.newaxis]
+
+    # normalize to [0, 1]
+    xmax = np.max(frames_keypoints[:, :, 0], axis=1)
+    ymax = np.max(frames_keypoints[:, :, 1], axis=1)
+
+    frames_keypoints[:, :, 0] = safe_divide(frames_keypoints[:, :, 0], xmax[:, np.newaxis])
+    frames_keypoints[:, :, 1] = safe_divide(frames_keypoints[:, :, 1], ymax[:, np.newaxis])
+
+    return frames_keypoints
