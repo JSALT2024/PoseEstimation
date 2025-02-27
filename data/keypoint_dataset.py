@@ -1,11 +1,15 @@
 import json
 import os
-
+import random
+from copy import deepcopy
 import numpy as np
 from torch.utils.data import Dataset
 
 from .normalization import (local_keypoint_normalization, global_keypoint_normalization,
                             yasl_keypoint_normalization, yasl_keypoint_normalization2)
+
+from .augmentations import all_same, get_bbox, use_augmentation, get_rotation_matrix, get_shear_matrix, \
+    get_perspective_matrix, apply_transform
 
 
 def get_keypoints(json_data, data_key='cropped_keypoints', missing_values=0):
@@ -58,10 +62,11 @@ class KeypointDatasetJSON(Dataset):
             kp_normalization: tuple = (),
             kp_normalization_method="sign_space",
             data_key: str = "cropped_keypoints",
-            missing_values: int = 0
+            missing_values: int = 0,
+            augmentation_configs: list = [],
+            augmentation_per_frame: bool = False
     ):
         """
-
         Args:
             json_folder: Folder containing raw keypoints in json files.
             clip_to_video: A mapping from clip names to video names.
@@ -78,6 +83,9 @@ class KeypointDatasetJSON(Dataset):
             data_key: What data to select from json file
             (cropped_keypoints - keypoints in cropped clip, keypoints - keypoints in original clip)
             missing_values: What value to use for missing values.
+            augmentation_configs: List of augmentation configurations.
+            augmentation_per_frame: If True, apply augmentation to each frame separately,
+                                    else all frames in clip will be augmented in same way.
         """
         json_list = get_json_files(json_folder)
         self.video_to_files = {}
@@ -122,6 +130,7 @@ class KeypointDatasetJSON(Dataset):
             raise ValueError("kp_normalization must be provided when using kp_normalization_method")
 
         self.kp_normalization_method = normalization_methods[kp_normalization_method]
+        self.kp_augmentations = KeypointAugmentations(augmentation_configs, augmentation_per_frame) if augmentation_configs else None
 
     def __len__(self):
         return len(self.video_to_files)
@@ -229,9 +238,191 @@ class KeypointDatasetJSON(Dataset):
             clip_name = ".".join(name_split[:-1])
 
             keypoints = self.load_keypoints(clip_path)
+            keypoints = self.kp_augmentations(keypoints) if self.kp_augmentations is not None else keypoints
             clip_data = self.kp_normalization_method(keypoints)
 
             clip_data = {"data": clip_data, "video_name": video_name, "clip_name": clip_name}
             output_data.append(clip_data)
 
         return output_data
+
+
+class KeypointAugmentations:
+    def __init__(self, augmentation_configs, augmentation_per_frame=False):
+        self.augmentation_configs = augmentation_configs
+        self.augmentation_per_frame = augmentation_per_frame
+
+        self.augmentation_methods = {
+            "rotate": self._rotate_augmentation,
+            "shear": self._shear_augmentation,
+            "perspective": self._perspective_augmentation,
+            "rotate_hand": self._rotate_hand_augmentation,
+            "noise": self._noise_augmentation
+        }
+
+        self._augmentation_config_check(augmentation_configs)
+
+    def _augmentation_config_check(self, config):
+        # check augmentation parameters
+        for augmentation in config:
+            assert "name" in augmentation and "p" in augmentation, \
+                f"All augmentation configs must have 'name' and 'p' values specified. {augmentation}"
+
+        # check augmentation names
+        for augmentation in config:
+            assert augmentation["name"] in self.augmentation_methods, \
+                (f"Invalid augmentation name: {augmentation['name']}. "
+                 f"Valid augmentations: {list(self.augmentation_methods.keys())}")
+
+    @staticmethod
+    def _rotate_augmentation(keypoints: dict, angle: tuple, return_transform=False, transform_matrix=None):
+        if transform_matrix is not None:
+            rotation_matrix = transform_matrix
+        else:
+            angle = random.uniform(*angle)
+            x0, y0, x1, y1 = get_bbox(keypoints["pose_landmarks"])
+            h, w = y1 - y0, x1 - x0
+            center = x0 + w / 2, y0 + h / 2
+            rotation_matrix = get_rotation_matrix(angle, center)
+
+        for name, kp in keypoints.items():
+            if all_same(kp):
+                continue
+            keypoints[name] = apply_transform(kp, rotation_matrix)
+
+        if return_transform:
+            return keypoints, rotation_matrix
+        return keypoints
+
+    @staticmethod
+    def _shear_augmentation(keypoints: dict, angle_x: tuple, angle_y: tuple, return_transform=False, transform_matrix=None):
+        if transform_matrix is not None:
+            shear_matrix = transform_matrix
+        else:
+            angle_x = random.uniform(*angle_x)
+            angle_y = random.uniform(*angle_y)
+            shear_matrix = get_shear_matrix(angle_x, angle_y)
+
+        for name, kp in keypoints.items():
+            if all_same(kp):
+                continue
+            keypoints[name] = apply_transform(kp, shear_matrix)
+
+        if return_transform:
+            return keypoints, shear_matrix
+        return keypoints
+
+    @staticmethod
+    def _perspective_augmentation(keypoints: dict, portion: tuple, reference_size: int = 512, return_transform=False, transform_matrix=None):
+        if transform_matrix is not None:
+            perspective_matrix = transform_matrix
+        else:
+            portion = random.uniform(*portion)
+            perspective_matrix = get_perspective_matrix(portion, reference_size)
+
+        for name, kp in keypoints.items():
+            if all_same(kp):
+                continue
+            keypoints[name] = apply_transform(kp, perspective_matrix)
+
+        if return_transform:
+            return keypoints, perspective_matrix
+        return keypoints
+
+    @staticmethod
+    def _rotate_hand_augmentation(keypoints: dict, angle: tuple, rotation_center: str, return_transform=False, transform_matrix=None):
+        LEFT_HAND_IDX = [11, 13, 15, 17, 19, 21]
+        RIGHT_HAND_IDX = [12, 14, 16, 18, 20, 22]
+        rotate_position = {
+            "shoulder": 0,
+            "elbow": 1,
+            "wrist": 2,
+        }
+
+        # get angles and rotation position index
+        angle_left = random.uniform(*angle)
+        angle_right = random.uniform(*angle)
+        rot_pos_idx = rotate_position[rotation_center]
+
+        # get indexes for rotation
+        left_center_idx = LEFT_HAND_IDX[rot_pos_idx]
+        right_center_idx = RIGHT_HAND_IDX[rot_pos_idx]
+
+        left_rotate_idx = LEFT_HAND_IDX[rot_pos_idx:]
+        right_rotate_idx = RIGHT_HAND_IDX[rot_pos_idx:]
+
+        # get rotation matrix
+        rotation_matrix_left = get_rotation_matrix(angle=angle_left,
+                                                   center=keypoints["pose_landmarks"][left_center_idx])
+        rotation_matrix_right = get_rotation_matrix(angle=angle_right,
+                                                    center=keypoints["pose_landmarks"][right_center_idx])
+
+        # transform
+        keypoints["pose_landmarks"][left_rotate_idx] = apply_transform(keypoints["pose_landmarks"][left_rotate_idx],
+                                                                       rotation_matrix_left)
+        keypoints["pose_landmarks"][right_rotate_idx] = apply_transform(keypoints["pose_landmarks"][right_rotate_idx],
+                                                                        rotation_matrix_right)
+
+        if not all_same(keypoints["left_hand_landmarks"]):
+            keypoints["left_hand_landmarks"] = apply_transform(keypoints["left_hand_landmarks"], rotation_matrix_left)
+        if not all_same(keypoints["right_hand_landmarks"]):
+            keypoints["right_hand_landmarks"] = apply_transform(keypoints["right_hand_landmarks"],
+                                                                rotation_matrix_right)
+
+        if return_transform:
+            return keypoints, (rotation_matrix_left, rotation_matrix_right)
+
+        return keypoints
+
+    @staticmethod
+    def _noise_augmentation(keypoints: dict, mean: float = 0, std: float = 1, return_transform=False, transform_matrix=None):
+        for name, kp in keypoints.items():
+            if all_same(kp):
+                continue
+            keypoints[name] = kp + np.random.normal(loc=mean, scale=std, size=np.array(kp).shape)
+
+        if return_transform:
+            return keypoints, None
+        return keypoints
+
+    def __call__(self, keypoints: dict):
+        """
+        Args:
+            keypoints:  {'name': [frames, num_keypoints, 2]}
+        """
+        _augmentation_configs = deepcopy(self.augmentation_configs)
+        _keypoints = deepcopy(keypoints)
+
+        num_frames = len(list(_keypoints.values())[0])
+
+        augmentation_name = [augmentation_config.pop('name') for augmentation_config in _augmentation_configs]
+        augmentation_p = [augmentation_config.pop('p') for augmentation_config in _augmentation_configs]
+        augmentation_fcn = [self.augmentation_methods[name] for name in augmentation_name]
+        augmentation_transform = [None for _ in augmentation_name]
+        use_augmentation_clip = [use_augmentation(p) for p in augmentation_p]
+
+        for frame in range(num_frames):
+            # get frame keypoints
+            frame_keypoints = {}
+            for kp_name, landmarks in _keypoints.items():
+                frame_keypoints[kp_name] = landmarks[frame]
+
+            # apply augmentation
+            for aidx, augmentation_config in enumerate(_augmentation_configs):
+                if self.augmentation_per_frame and use_augmentation(augmentation_p[aidx]):
+                    frame_keypoints = augmentation_fcn[aidx](keypoints=frame_keypoints, **augmentation_config)
+
+                elif (not self.augmentation_per_frame) and use_augmentation_clip[aidx]:
+                    frame_keypoints, _transformation_matrix = augmentation_fcn[aidx](
+                        keypoints=frame_keypoints,
+                        **augmentation_config,
+                        return_transform=True,
+                        transform_matrix=augmentation_transform[aidx]
+                    )
+                    augmentation_transform[aidx] = _transformation_matrix
+
+            # put keypoints back
+            for kp_name in _keypoints:
+                _keypoints[kp_name][frame] = frame_keypoints[kp_name]
+
+        return _keypoints
