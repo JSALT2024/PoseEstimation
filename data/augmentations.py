@@ -47,9 +47,18 @@ def get_perspective_matrix(portion=0, reference_size=512):
     """Generate a 2D perspective transformation matrix."""
 
     src = np.array(((0, 1), (1, 1), (0, 0), (1, 0)), dtype=np.float32) * reference_size
-    dest = np.array(((0 + portion, 1), (1 - portion, 1), (0, 0), (1, 0)), dtype=np.float32) * reference_size
 
-    perspective_matrix = cv2.getPerspectiveTransform(src, dest)
+    # randomly choose if to shrink top or bottom
+    dst_top = np.array(((0 + portion, 1), (1 - portion, 1), (0, 0), (1, 0)), dtype=np.float32) * reference_size
+    dst_bottom = np.array(((0, 1), (1, 1), (0 + portion, 0), (1 - portion, 0)), dtype=np.float32) * reference_size
+    dst_right = np.array(((0, 1), (1, 1 - portion), (0, 0), (1, 0 + portion)), dtype=np.float32) * reference_size
+    dst_left = np.array(((0, 1 - portion), (1, 1), (0, 0 + portion), (1, 0)), dtype=np.float32) * reference_size
+    dst_choices = [dst_top, dst_bottom, dst_right, dst_left]
+
+    dst_idx = np.random.choice(np.arange(len(dst_choices)))
+    dst = dst_choices[dst_idx]
+
+    perspective_matrix = cv2.getPerspectiveTransform(src, dst)
 
     return perspective_matrix
 
