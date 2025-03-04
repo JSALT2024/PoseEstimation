@@ -62,7 +62,7 @@ class KeypointDatasetJSON(Dataset):
             kp_normalization: tuple = (),
             kp_normalization_method="sign_space",
             data_key: str = "cropped_keypoints",
-            missing_values: int = 0,
+            missing_values: int = -1,
             augmentation_configs: list = [],
             augmentation_per_frame: bool = False
     ):
