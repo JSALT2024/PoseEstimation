@@ -48,6 +48,39 @@ def get_keypoints(json_data, data_key='cropped_keypoints', missing_values=0):
     return pose_landmarks, right_hand_landmarks, left_hand_landmarks, face_landmarks
 
 
+def find_zero_sequences(sequence: list):
+    # find starts and ends of zero sub-sequences
+    sequence = np.array(sequence)
+    sequence = (sequence > 0).astype(int)
+    diff = np.diff(np.r_[1, sequence, 1])  # Pad with 1s to detect zero sequence edges
+    starts = np.where(diff == -1)[0]  # Start of zero sequences
+    ends = np.where(diff == 1)[0]     # End of zero sequences (adjust index)
+
+    return list(zip(starts, ends))
+
+
+def interpolate_keypoints(keypoints: dict, max_distance: int):
+    # get lenghts
+    keypoints_lenghts = {name: [] for name in keypoints}
+    for name, kp in keypoints.items():
+        for frame_keypoints in kp:
+            lenght = 0 if all_same(frame_keypoints) else 1
+            keypoints_lenghts[name].append(lenght)
+
+    # get sequences
+    for name, kp in keypoints_lenghts.items():
+        sequences = find_zero_sequences(kp)
+        for s, e in sequences:
+            l = e - s
+            if l > max_distance:
+                continue
+            start_keypoints = keypoints[name][s - 1]
+            end_keypoints = keypoints[name][e]
+            interpolated_keypoints = np.linspace(start_keypoints, end_keypoints, (e - s)+2)[1:-1]
+            keypoints[name][s:e] = interpolated_keypoints
+    return keypoints
+
+
 def get_json_files(json_dir):
     json_files = [os.path.join(json_dir, json_file) for json_file in os.listdir(json_dir) if
                   json_file.endswith('.json')]
@@ -64,7 +97,8 @@ class KeypointDatasetJSON(Dataset):
             data_key: str = "cropped_keypoints",
             missing_values: int = -1,
             augmentation_configs: list = [],
-            augmentation_per_frame: bool = False
+            augmentation_per_frame: bool = False,
+            interpolate: int = -1
     ):
         """
         Args:
@@ -86,6 +120,7 @@ class KeypointDatasetJSON(Dataset):
             augmentation_configs: List of augmentation configurations.
             augmentation_per_frame: If True, apply augmentation to each frame separately,
                                     else all frames in clip will be augmented in same way.
+            interpolate: linear interpolation of keypoints if the missign sequenc is =< than interpolate value
         """
         json_list = get_json_files(json_folder)
         self.video_to_files = {}
@@ -115,6 +150,7 @@ class KeypointDatasetJSON(Dataset):
         self.kp_normalization = kp_normalization
         self.data_key = data_key
         self.missing_values = missing_values
+        self.interpolate = interpolate
 
         # select normalization method
         normalization_methods = {
@@ -284,6 +320,7 @@ class KeypointDatasetJSON(Dataset):
             clip_name = ".".join(name_split[:-1])
 
             keypoints = self.load_keypoints(clip_path)
+            keypoints = interpolate_keypoints(keypoints, self.interpolate) if self.interpolate > 0 else keypoints
             keypoints = self.kp_augmentations(keypoints) if self.kp_augmentations is not None else keypoints
             clip_data = self.kp_normalization_method(keypoints)
 
