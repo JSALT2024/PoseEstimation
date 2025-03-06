@@ -13,6 +13,9 @@ from .augmentations import all_same, get_bbox, use_augmentation, get_rotation_ma
 
 
 def get_keypoints(json_data, data_key='cropped_keypoints', missing_values=0):
+    if missing_values is None:
+        missing_values = 0
+
     right_hand_landmarks = []
     left_hand_landmarks = []
     face_landmarks = []
@@ -95,7 +98,7 @@ class KeypointDatasetJSON(Dataset):
             kp_normalization: tuple = (),
             kp_normalization_method="sign_space",
             data_key: str = "cropped_keypoints",
-            missing_values: int = -1,
+            missing_values: int = None,
             augmentation_configs: list = [],
             augmentation_per_frame: bool = False,
             interpolate: int = -1
@@ -233,11 +236,13 @@ class KeypointDatasetJSON(Dataset):
         for idx in range(len(self.kp_normalization)):
             data.append(all_landmarks[idx])
 
-        for didx, _data in enumerate(data):
-            for fidx in range(len(_data)):
-                if not all_same(_data[fidx]):
-                    continue
-                data[didx][fidx] = np.zeros_like(_data[fidx]) + self.missing_values
+        if self.missing_values is not None:
+            for didx, _data in enumerate(data):
+                for fidx in range(len(_data)):
+                    if not all_same(_data[fidx]):
+                        continue
+                    data[didx][fidx] = np.zeros_like(_data[fidx]) + self.missing_values
+
         data = np.concatenate(data, axis=1)
         data = data.reshape(data.shape[0], -1)
         return data
@@ -249,25 +254,27 @@ class KeypointDatasetJSON(Dataset):
             data.append(raw_keypoints[landmarks])
 
         # prepare for missing value replacement
-        landmark_cum_indexes = [0, *np.cumsum([len(i[0]) for i in data])]
-        landmark_empty_indexes = []
-        for didx, _data in enumerate(data):
-            landmark_empty_indexes.append([])
-            for fidx in range(len(_data)):
-                if not all_same(_data[fidx]):
-                    continue
-                landmark_empty_indexes[didx].append(fidx)
+        if self.missing_values is not None:
+            landmark_cum_indexes = [0, *np.cumsum([len(i[0]) for i in data])]
+            landmark_empty_indexes = []
+            for didx, _data in enumerate(data):
+                landmark_empty_indexes.append([])
+                for fidx in range(len(_data)):
+                    if not all_same(_data[fidx]):
+                        continue
+                    landmark_empty_indexes[didx].append(fidx)
 
         # normalize
         data = np.concatenate(data, axis=1)
         data = yasl_keypoint_normalization(data)
 
         # replace missing values
-        for didx in range(len(landmark_empty_indexes)):
-            for fidx in landmark_empty_indexes[didx]:
-                sidx = landmark_cum_indexes[didx]
-                eidx = landmark_cum_indexes[didx + 1]
-                data[fidx][sidx:eidx] = np.zeros_like(data[fidx][sidx:eidx]) + self.missing_values
+        if self.missing_values is not None:
+            for didx in range(len(landmark_empty_indexes)):
+                for fidx in landmark_empty_indexes[didx]:
+                    sidx = landmark_cum_indexes[didx]
+                    eidx = landmark_cum_indexes[didx + 1]
+                    data[fidx][sidx:eidx] = np.zeros_like(data[fidx][sidx:eidx]) + self.missing_values
 
 
         data = data.reshape(data.shape[0], -1)
@@ -280,25 +287,27 @@ class KeypointDatasetJSON(Dataset):
             data.append(raw_keypoints[landmarks])
 
         # prepare for missing value replacement
-        landmark_cum_indexes = [0, *np.cumsum([len(i[0]) for i in data])]
-        landmark_empty_indexes = []
-        for didx, _data in enumerate(data):
-            landmark_empty_indexes.append([])
-            for fidx in range(len(_data)):
-                if not all_same(_data[fidx]):
-                    continue
-                landmark_empty_indexes[didx].append(fidx)
+        if self.missing_values is not None:
+            landmark_cum_indexes = [0, *np.cumsum([len(i[0]) for i in data])]
+            landmark_empty_indexes = []
+            for didx, _data in enumerate(data):
+                landmark_empty_indexes.append([])
+                for fidx in range(len(_data)):
+                    if not all_same(_data[fidx]):
+                        continue
+                    landmark_empty_indexes[didx].append(fidx)
 
         # normalize
         data = np.concatenate(data, axis=1)
         data = yasl_keypoint_normalization2(data)
 
         # replace missing values
-        for didx in range(len(landmark_empty_indexes)):
-            for fidx in landmark_empty_indexes[didx]:
-                sidx = landmark_cum_indexes[didx]
-                eidx = landmark_cum_indexes[didx+1]
-                data[fidx][sidx:eidx] = np.zeros_like(data[fidx][sidx:eidx]) + self.missing_values
+        if self.missing_values is not None:
+            for didx in range(len(landmark_empty_indexes)):
+                for fidx in landmark_empty_indexes[didx]:
+                    sidx = landmark_cum_indexes[didx]
+                    eidx = landmark_cum_indexes[didx+1]
+                    data[fidx][sidx:eidx] = np.zeros_like(data[fidx][sidx:eidx]) + self.missing_values
 
         data = data.reshape(data.shape[0], -1)
         return data
