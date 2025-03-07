@@ -62,25 +62,27 @@ def find_zero_sequences(sequence: list):
     return list(zip(starts, ends))
 
 
-def interpolate_keypoints(keypoints: dict, max_distance: int):
-    # get lenghts
-    keypoints_lenghts = {name: [] for name in keypoints}
+def interpolate_keypoints(keypoints: dict, max_distance: int, round_digits: int = 3):
+    # get lengths
+    keypoints_lengths = {name: [] for name in keypoints}
     for name, kp in keypoints.items():
         for frame_keypoints in kp:
-            lenght = 0 if all_same(frame_keypoints) else 1
-            keypoints_lenghts[name].append(lenght)
+            length = 0 if all_same(frame_keypoints) else 1
+            keypoints_lengths[name].append(length)
 
     # get sequences
-    for name, kp in keypoints_lenghts.items():
+    for name, kp in keypoints_lengths.items():
         sequences = find_zero_sequences(kp)
         for s, e in sequences:
+            if (s - 1) <= 0 or e >= len(keypoints[name]):
+                continue
             l = e - s
             if l > max_distance:
                 continue
             start_keypoints = keypoints[name][s - 1]
             end_keypoints = keypoints[name][e]
             interpolated_keypoints = np.linspace(start_keypoints, end_keypoints, (e - s)+2)[1:-1]
-            keypoints[name][s:e] = interpolated_keypoints
+            keypoints[name][s:e] = np.round(interpolated_keypoints, round_digits) # round to same precision as keypoints from json (keypoints are rounded after detection by mediapipe)
     return keypoints
 
 
