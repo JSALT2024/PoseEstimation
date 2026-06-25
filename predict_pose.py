@@ -256,8 +256,8 @@ def process_hands(mp_hand_keypoints, mp_handedness, pose_keypoints, image_size, 
     for data in mp_hand_keypoints:
         hand_keypoints.append(keypoints_out_format([data], image_size))
 
-    if (mp_hand_keypoints) == 1:
-        side = mp_handedness[0]["category_name"].lower
+    if len(mp_hand_keypoints) == 1:
+        side = mp_handedness[0][0].category_name.lower()
         out[side] = hand_keypoints[0]
         return out
 

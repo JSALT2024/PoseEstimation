@@ -132,7 +132,7 @@ def keypoints_out_format(mp_keypoints, image_size):
         x, y = mdeiapipe_to_xy(data, image_size)
         z = np.array([kp.z for kp in data])
         visibility = np.array([kp.visibility for kp in data])
-        data = np.array([x, y, z, visibility]).T
+        data = np.array([x, y, z, visibility], dtype=float).T
         return data
     else:
         return []
@@ -158,8 +158,8 @@ def process_hands(mp_hand_keypoints, mp_handedness, pose_keypoints, image_size, 
     for data in mp_hand_keypoints:
         hand_keypoints.append(keypoints_out_format([data], image_size))
 
-    if (mp_hand_keypoints) == 1:
-        side = mp_handedness[0]["category_name"].lower
+    if len(mp_hand_keypoints) == 1:
+        side = mp_handedness[0][0].category_name.lower()
         out[side] = hand_keypoints[0]
         return out
 
@@ -221,24 +221,29 @@ def create_index_files(input_folder: str, output_folder: str, num_index_files: i
 
     # split file
     index_file_split = []
-    for i in range(1, num_index_files):
-        start = (i - 1) * step
-        end = i * step
-        index_file_split.append(index_file[start:end])
-        logging.debug(f"{i} {start} {end}")
-    logging.debug(f"{i} {end} {num_files}")
-    index_file_split.append(index_file[end::])
+    if num_index_files == 1:
+        index_file_split = [index_file]
+    else:
+        for i in range(1, num_index_files):
+            start = (i - 1) * step
+            end = i * step
+            index_file_split.append(index_file[start:end])
+            logging.debug(f"{i} {start} {end}")
+        logging.debug(f"{i} {end} {num_files}")
+        index_file_split.append(index_file[end::])
 
     # save index files
     logging.info("Saving index files:")
+    paths = []
     for i, file in enumerate(index_file_split):
         path = os.path.join(output_folder, f"index_file_{i:03d}.csv")
         file.to_csv(path, index=False)
-        index_files.append(path)
+        paths.append(path)
         logging.debug(path)
+    return paths
 
 
-def _create_debug_image(image: np.ndarray, prediction: dict):
+def _create_debug_image(image: np.ndarray, prediction: dict, idx: int):
     colors = {
         'pose_landmarks': [50, 50, 200],
         'right_hand_landmarks': [0, 0, 0],
@@ -311,6 +316,9 @@ def predict(
         "cropped_size": None,
     }
 
+    if len(results["images"]) == 0:
+        return {"state": -3, "results": None}
+
     # yolo predict + crop images
     yolo_predictions = []
     num_predictions = []
@@ -341,16 +349,25 @@ def predict(
             continue
 
         _x0, _y0, _x1, _y1 = new_bbox(image, keypoints[0], lsi=5, rsi=6, sign_space=yolo_sign_space)
+        if sum([_x0, _y0, _x1, _y1]) == 0:
+            continue
 
         x0.append(_x0)
         y0.append(_y0)
         x1.append(_x1)
         y1.append(_y1)
 
-    x0y = np.round(np.median(x0)).astype(int)
-    y0y = np.round(np.median(y0)).astype(int)
-    x1y = np.round(np.median(x1)).astype(int)
-    y1y = np.round(np.median(y1)).astype(int)
+    if len(x0) == 0:
+        ih, iw = video[0].shape[:2]
+        x0y = 0
+        y0y = 0
+        x1y = iw
+        y1y = ih
+    else:
+        x0y = np.round(np.median(x0)).astype(int)
+        y0y = np.round(np.median(y0)).astype(int)
+        x1y = np.round(np.median(x1)).astype(int)
+        y1y = np.round(np.median(y1)).astype(int)
 
     # mediapipe predict + signing space
     mp_predictions = []
@@ -441,7 +458,7 @@ def predict(
             if len(keypoints[name]) == 0:
                 keypoints[name] = np.array([])
                 continue
-            keypoints[name] = keypoints[name][:, :2]
+            keypoints[name] = np.asarray(keypoints[name][:, :2], dtype=float)
 
         # move kp
         x_move = x0y
@@ -506,7 +523,7 @@ def get_args_parser():
     parser.add_argument('--index_file_id', type=int, help="Id of specific index file. If not provided file "
                                                                       "will be chosen randomly form index_path after "
                                                                       "each clip.")
-    parser.add_argument('--num_index_files', type=int, default="", help="Number of index files to generate.")
+    parser.add_argument('--num_index_files', type=int, default=1, help="Number of index files to generate.")
     parser.add_argument('--tmp_folder', type=str, help="If provided, cropped clips are first saved in this folder and "
                                                        "than copied to input_folder.")
     parser.add_argument('--checkpoint_folder', default="", type=str, help="Path to folder with MediaPipe checkpoints.")
@@ -556,7 +573,7 @@ if __name__ == "__main__":
 
         # create index files
         if len(index_files) == 0:
-            create_index_files(input_folder, index_folder, args.num_index_files)
+            index_files = create_index_files(input_folder, index_folder, args.num_index_files)
 
         # select index file
         for _ in range(len(index_files)):
@@ -599,7 +616,7 @@ if __name__ == "__main__":
         index_file.to_csv(index_path, index=False)
 
         # get path to video
-        video_name = index_file.iloc[index_row_idx]["file_names"]
+        video_name = index_file.loc[index_row_idx, "file_names"]
         video_path = os.path.join(input_folder, video_name)
 
         # predict
@@ -630,11 +647,11 @@ if __name__ == "__main__":
 
                 # save video
                 h, w = prediction["results"]["cropped_size"]
-                result = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, (h, w))
+                result = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, (w, h))
                 for idx in range(len(prediction["results"]["cropped_images"])):
                     cropped_image = prediction["results"]["cropped_images"][idx]
                     if args.debug:
-                        cropped_image = _create_debug_image(cropped_image, prediction)
+                        cropped_image = _create_debug_image(cropped_image, prediction, idx)
                     result.write(cv2.cvtColor(cropped_image, cv2.COLOR_RGB2BGR))
                 result.release()
 
@@ -670,7 +687,7 @@ if __name__ == "__main__":
         process_time = time.time() - start_time
         run_stats["all_times"].append(process_time)
 
-        if prediction["results"] is not None:
+        if prediction is not None and prediction["results"] is not None:
             run_stats["all_frames"].append(len(prediction["results"]["keypoints"]))
             if prediction['state'] == 1:
                 run_stats["processed_videos"] += 1
