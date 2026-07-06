@@ -739,7 +739,9 @@ def get_args_parser():
     parser.add_argument('--yolo_sign_space', type=float, default=4, help="Size of the signing space (n * "
                                                                   "distance_between_shoulders)")
     parser.add_argument('--debug', action='store_true', default=False, help="Save clip with predicted keypoints.")
-    
+    parser.add_argument('--json_only', action='store_true', default=False,
+                        help="Save only JSON keypoint files, skip writing cropped videos.")
+
     parser.add_argument('--target_index_values', type=int, default=[], nargs="*")
     return parser
 
@@ -855,14 +857,15 @@ if __name__ == "__main__":
                     video_path = os.path.join(args.tmp_folder, f"{file_name}.mp4")
 
                 # save video
-                h, w = prediction["results"]["cropped_size"]
-                result = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, (w, h))
-                for idx in range(len(prediction["results"]["cropped_images"])):
-                    cropped_image = prediction["results"]["cropped_images"][idx]
-                    if args.debug:
-                        cropped_image = _create_debug_image(cropped_image, prediction, idx)
-                    result.write(cv2.cvtColor(cropped_image, cv2.COLOR_RGB2BGR))
-                result.release()
+                if not args.json_only:
+                    h, w = prediction["results"]["cropped_size"]
+                    result = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, (w, h))
+                    for idx in range(len(prediction["results"]["cropped_images"])):
+                        cropped_image = prediction["results"]["cropped_images"][idx]
+                        if args.debug:
+                            cropped_image = _create_debug_image(cropped_image, prediction, idx)
+                        result.write(cv2.cvtColor(cropped_image, cv2.COLOR_RGB2BGR))
+                    result.release()
 
                 # save keypoints
                 results = prediction["results"]
@@ -875,11 +878,12 @@ if __name__ == "__main__":
                 if args.tmp_folder:
                     if not os.path.exists(os.path.join(output_folder, f"{file_name}.json")):
                         _ = shutil.move(keypoints_path, output_folder)
-                    if not os.path.exists(os.path.join(output_folder, f"{file_name}.mp4")):
+                    if not args.json_only and not os.path.exists(os.path.join(output_folder, f"{file_name}.mp4")):
                         _ = shutil.move(video_path, output_folder)
                     shutil.rmtree(args.tmp_folder)
                 os.chmod(os.path.join(output_folder, f"{file_name}.json"), 0o0666)
-                os.chmod(os.path.join(output_folder, f"{file_name}.mp4"), 0o0666)
+                if not args.json_only:
+                    os.chmod(os.path.join(output_folder, f"{file_name}.mp4"), 0o0666)
             else:
                 logging.info(f"State: {prediction['state']}. Multiple or none people in video: {video_path}")
 
