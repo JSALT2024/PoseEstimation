@@ -16,7 +16,7 @@ from mediapipe.tasks.python import vision
 from scipy.optimize import linear_sum_assignment
 from ultralytics import YOLO
 
-from utils import crop_pad_image, load_video_cv, get_state_counts
+from utils import crop_pad_image, load_video_cv, get_state_counts, create_index_files
 
 logging.basicConfig(level=logging.INFO)
 VisionRunningMode = mp.tasks.vision.RunningMode
@@ -231,40 +231,6 @@ def process_hands(mp_hand_keypoints, mp_handedness, pose_keypoints, image_size, 
             out["left"] = hand_keypoints[left_idx]
 
     return out
-
-
-def create_index_files(input_folder: str, output_folder: str, num_index_files: int):
-    # get names of clips and prepare index file
-    file_names = os.listdir(input_folder)
-    file_names = [file_name for file_name in file_names if ".mp4" in file_name]
-
-    index_file = pd.DataFrame({"file_names": file_names, "state": [-1] * len(file_names)})
-    num_files = len(index_file)
-    step = int(np.round(num_files / num_index_files))
-    logging.debug(f"Files: {num_files},  Step: {step}")
-
-    # split file
-    index_file_split = []
-    if num_index_files == 1:
-        index_file_split = [index_file]
-    else:
-        for i in range(1, num_index_files):
-            start = (i - 1) * step
-            end = i * step
-            index_file_split.append(index_file[start:end])
-            logging.debug(f"{i} {start} {end}")
-        logging.debug(f"{i} {end} {num_files}")
-        index_file_split.append(index_file[end::])
-
-    # save index files
-    logging.info("Saving index files:")
-    paths = []
-    for i, file in enumerate(index_file_split):
-        path = os.path.join(output_folder, f"index_file_{i:03d}.csv")
-        file.to_csv(path, index=False)
-        paths.append(path)
-        logging.debug(path)
-    return paths
 
 
 def _create_debug_image(image: np.ndarray, prediction: dict, idx: int):
@@ -537,6 +503,9 @@ def get_args_parser():
                                                                       "will be chosen randomly form index_path after "
                                                                       "each clip.")
     parser.add_argument('--num_index_files', type=int, default=1, help="Number of index files to generate.")
+    parser.add_argument('--video_suffixes', type=str, nargs='*',default=['.mp4'],
+        help="Video file suffixes to include when creating index files (e.g. .mp4 .avi .mov).",
+    )
     parser.add_argument('--tmp_folder', type=str, help="If provided, cropped clips are first saved in this folder and "
                                                        "than copied to input_folder.")
     parser.add_argument('--checkpoint_folder', default="", type=str, help="Path to folder with MediaPipe checkpoints.")
@@ -592,7 +561,7 @@ if __name__ == "__main__":
 
         # create index files
         if len(index_files) == 0:
-            index_files = create_index_files(input_folder, index_folder, args.num_index_files)
+            index_files = create_index_files(input_folder, index_folder, args.num_index_files, video_suffixes=args.video_suffixes)
 
         # select index file
         for _ in range(len(index_files)):

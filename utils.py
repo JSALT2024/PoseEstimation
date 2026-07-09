@@ -1,9 +1,10 @@
+import logging
 import numpy as np
 import os
 import pandas as pd
 from tqdm import tqdm
 import cv2
-from typing import List
+from typing import List, Sequence
 
 
 def load_video_cv(path: str) -> (List[np.ndarray], float):
@@ -111,3 +112,48 @@ def reset_state(index_file: str, old_state: int, new_state: int):
         index_file = pd.read_csv(file, dtype={"file_names": str, "state": float})
         index_file.loc[index_file["state"] == old_state, 'state'] = new_state
         index_file.to_csv(file, index=False)
+
+
+def create_index_files(
+    input_folder: str,
+    output_folder: str,
+    num_index_files: int,
+    video_suffixes: Sequence[str] = (".mp4",),
+) -> List[str]:
+    """Create index CSV files listing videos to process, split across workers."""
+    suffixes = tuple(s if s.startswith(".") else f".{s}" for s in video_suffixes)
+
+    file_names = [
+        file_name
+        for file_name in os.listdir(input_folder)
+        if any(file_name.lower().endswith(suffix.lower()) for suffix in suffixes)
+    ]
+    file_names.sort()
+
+    index_file = pd.DataFrame({"file_names": file_names, "state": [-1] * len(file_names)})
+    num_files = len(index_file)
+    step = int(np.round(num_files / num_index_files))
+    logging.debug(f"Files: {num_files},  Step: {step}")
+
+    # split file
+    index_file_split = []
+    if num_index_files == 1:
+        index_file_split = [index_file]
+    else:
+        for i in range(1, num_index_files):
+            start = (i - 1) * step
+            end = i * step
+            index_file_split.append(index_file[start:end])
+            logging.debug(f"{i} {start} {end}")
+        logging.debug(f"{i} {end} {num_files}")
+        index_file_split.append(index_file[end::])
+
+    # save index files
+    logging.info("Saving index files:")
+    paths = []
+    for i, file in enumerate(index_file_split):
+        path = os.path.join(output_folder, f"index_file_{i:03d}.csv")
+        file.to_csv(path, index=False)
+        paths.append(path)
+        logging.debug(path)
+    return paths
