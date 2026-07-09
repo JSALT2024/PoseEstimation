@@ -31,15 +31,16 @@ wget -O checkpoints/face_landmarker.task -q https://storage.googleapis.com/media
 
 Prepare index files in advance (not necessary).
 ```python
-from pose_prediction_parallel import create_index_files
+from utils_predict import create_index_files
+
 clip_folder = ""
 index_folder = ""
 num_index_files = 100
 
-create_index_files(clip_folder, index_folder, num_index_files)
+create_index_files(clip_folder, index_folder, num_index_files, video_suffixes=[".mp4"])
 ```
 
-Run multiple parallel jobs. If index files does not exist, first job will crete them.
+Run multiple parallel jobs. If index files do not exist, the first job will create them.
 If `index_file_id` is not specified, clips will be processed randomly.
 ```shell
 # create 100 index files and process fill index_file_000
@@ -53,7 +54,8 @@ python pose_prediction_parallel.py \
     --index_file_id 0 \
     --checkpoint_folder checkpoints \
     --sign_space 4 \
-    --yolo_sign_space 4
+    --yolo_sign_space 4 \
+    --video_suffixes .mp4
 ```
 
 Parallel jobs can be run as array job
