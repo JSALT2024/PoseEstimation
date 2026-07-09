@@ -4,8 +4,6 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from tools.movement_analysis.bbox_tracking import BboxTracker, bbox_center, max_pairwise_center_distance
-
 # COCO / YOLO pose keypoint indices
 LEFT_WRIST = 9
 RIGHT_WRIST = 10
@@ -13,6 +11,32 @@ LEFT_SHOULDER = 5
 RIGHT_SHOULDER = 6
 
 INVALID_COST = 1e6
+
+
+def bbox_center(bbox: np.ndarray) -> np.ndarray:
+    return np.array([(bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0])
+
+
+def max_pairwise_center_distance(centers: np.ndarray) -> float:
+    if len(centers) < 2:
+        return 0.0
+    diffs = centers[:, None, :] - centers[None, :, :]
+    return float(np.max(np.linalg.norm(diffs, axis=2)))
+
+
+def bbox_iou(box_a: np.ndarray, box_b: np.ndarray) -> float:
+    x_a = max(box_a[0], box_b[0])
+    y_a = max(box_a[1], box_b[1])
+    x_b = min(box_a[2], box_b[2])
+    y_b = min(box_a[3], box_b[3])
+
+    inter_area = max(0.0, x_b - x_a) * max(0.0, y_b - y_a)
+    box_a_area = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
+    box_b_area = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+    denom = box_a_area + box_b_area - inter_area
+    if denom <= 0:
+        return 0.0
+    return inter_area / float(denom)
 
 
 @dataclass
@@ -349,7 +373,7 @@ class PoseTracker:
         cost_matrix = np.full((len(existing_ids), len(new_bboxes)), INVALID_COST, dtype=float)
         for i, (bbox_a, kpts_a) in enumerate(zip(existing_bboxes, existing_keypoints)):
             for j, (bbox_b, kpts_b) in enumerate(zip(new_bboxes, new_keypoints)):
-                iou_score = BboxTracker.iou(bbox_a, bbox_b)
+                iou_score = bbox_iou(bbox_a, bbox_b)
                 norm_kp_dist = _keypoint_distance_norm(kpts_a, kpts_b, bbox_a, bbox_b)
                 if iou_score < self.iou_threshold or norm_kp_dist > self.keypoint_dist_threshold:
                     continue
