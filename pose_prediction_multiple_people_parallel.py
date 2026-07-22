@@ -209,6 +209,22 @@ def get_signer(yolo_predictions):
             bboxes_new[idx] = tracker_result[idx]['bbox']
             keypoints_new[idx] = tracker_result[idx]['keypoints']
         yolo_predictions_new.append([bboxes_new, keypoints_new, confs_new])
+
+    # Pad every frame to the same track count. Track IDs grow over time and some
+    # frames can be empty, so lengths differ and np.array(...) would otherwise fail
+    # with an inhomogeneous shape (e.g. (num_frames,) + inhomogeneous part).
+    n_tracks = tracker.next_id
+    if n_tracks == 0:
+        return [[[], [], []] for _ in yolo_predictions_new]
+
+    for frame_idx, (bboxes, keypoints, confs) in enumerate(yolo_predictions_new):
+        pad = n_tracks - len(keypoints)
+        if pad > 0:
+            bboxes = list(bboxes) + [np.zeros((4)) for _ in range(pad)]
+            keypoints = list(keypoints) + [np.zeros((17, 2)) for _ in range(pad)]
+            confs = list(confs) + [0.0] * pad
+            yolo_predictions_new[frame_idx] = [bboxes, keypoints, confs]
+
     # select person with most wrist movement
     clip_keypoints = [kp for _, kp, _ in yolo_predictions_new]
     top_move_idx = compute_hand_movement(np.array(clip_keypoints))
