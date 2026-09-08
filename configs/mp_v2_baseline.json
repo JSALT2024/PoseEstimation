@@ -1,0 +1,15 @@
+{
+  "min_coverage": 0.20,
+  "min_frames": 10,
+  "min_mean_conf": 0.3,
+  "weight_hand_movement": 0.45,
+  "weight_coverage": 0.25,
+  "weight_confidence": 0.15,
+  "weight_bbox_movement": 0.1,
+  "weight_bbox_area": 0.05,
+  "short_span_threshold": 0.3,
+  "short_span_penalty": 0.2,
+  "walking_penalty": 0.3,
+  "walking_bbox_movement_threshold": 0.5,
+  "walking_hand_movement_threshold": 0.3
+}
