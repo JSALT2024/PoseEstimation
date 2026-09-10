@@ -227,6 +227,54 @@ def create_debug_image(image: np.ndarray, prediction: dict, idx: int):
     return image
 
 
+def list_input_videos(
+    input_folder: str,
+    video_suffixes: Sequence[str] = (".mp4",),
+) -> List[str]:
+    """Return sorted video file names used when creating index shards."""
+    suffixes = tuple(s if s.startswith(".") else f".{s}" for s in video_suffixes)
+    file_names = [
+        file_name
+        for file_name in os.listdir(input_folder)
+        if any(file_name.lower().endswith(suffix.lower()) for suffix in suffixes)
+    ]
+    file_names.sort()
+    return file_names
+
+
+def split_index_file(index_file: pd.DataFrame, num_index_files: int) -> List[pd.DataFrame]:
+    """Split an index DataFrame across workers. Must stay in sync with create_index_files."""
+    if num_index_files < 1:
+        raise ValueError(f"num_index_files must be >= 1, got {num_index_files}")
+    if num_index_files == 1:
+        return [index_file]
+
+    num_files = len(index_file)
+    step = int(np.round(num_files / num_index_files))
+    logging.debug(f"Files: {num_files},  Step: {step}")
+
+    index_file_split = []
+    for i in range(1, num_index_files):
+        start = (i - 1) * step
+        end = i * step
+        index_file_split.append(index_file[start:end])
+        logging.debug(f"{i} {start} {end}")
+    logging.debug(f"{i} {end} {num_files}")
+    index_file_split.append(index_file[end::])
+    return index_file_split
+
+
+def expected_index_shards(
+    input_folder: str,
+    num_index_files: int,
+    video_suffixes: Sequence[str] = (".mp4",),
+) -> List[pd.DataFrame]:
+    """Build the deterministic index shards that create_index_files would write."""
+    file_names = list_input_videos(input_folder, video_suffixes=video_suffixes)
+    index_file = pd.DataFrame({"file_names": file_names, "state": [-1] * len(file_names)})
+    return split_index_file(index_file, num_index_files)
+
+
 def create_index_files(
     input_folder: str,
     output_folder: str,
@@ -234,34 +282,10 @@ def create_index_files(
     video_suffixes: Sequence[str] = (".mp4",),
 ) -> List[str]:
     """Create index CSV files listing videos to process, split across workers."""
-    suffixes = tuple(s if s.startswith(".") else f".{s}" for s in video_suffixes)
+    index_file_split = expected_index_shards(
+        input_folder, num_index_files, video_suffixes=video_suffixes
+    )
 
-    file_names = [
-        file_name
-        for file_name in os.listdir(input_folder)
-        if any(file_name.lower().endswith(suffix.lower()) for suffix in suffixes)
-    ]
-    file_names.sort()
-
-    index_file = pd.DataFrame({"file_names": file_names, "state": [-1] * len(file_names)})
-    num_files = len(index_file)
-    step = int(np.round(num_files / num_index_files))
-    logging.debug(f"Files: {num_files},  Step: {step}")
-
-    # split file
-    index_file_split = []
-    if num_index_files == 1:
-        index_file_split = [index_file]
-    else:
-        for i in range(1, num_index_files):
-            start = (i - 1) * step
-            end = i * step
-            index_file_split.append(index_file[start:end])
-            logging.debug(f"{i} {start} {end}")
-        logging.debug(f"{i} {end} {num_files}")
-        index_file_split.append(index_file[end::])
-
-    # save index files
     logging.info("Saving index files:")
     paths = []
     for i, file in enumerate(index_file_split):
