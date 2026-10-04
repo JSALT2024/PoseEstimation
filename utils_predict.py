@@ -5,18 +5,38 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import pandas as pd
+import torch
 from mediapipe.tasks.python import vision
 from scipy.optimize import linear_sum_assignment
 from typing import List, Sequence
 from ultralytics import YOLO
+from ultralytics.cfg import DEFAULT_CFG_DICT
 
 BaseOptions = mp.tasks.BaseOptions
+
+
+def _resolve_yolo_device(device: str) -> str:
+    if device == "auto":
+        return "cuda:0" if torch.cuda.is_available() else "cpu"
+    if device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError(
+            f"YOLO device '{device}' was requested, but torch.cuda.is_available() is False"
+        )
+    return device
+
+
+def _yolo_precision_kwargs(half: bool) -> dict:
+    if "quantize" in DEFAULT_CFG_DICT:
+        return {"quantize": 16 if half else None}
+    return {"half": half}
 
 
 def create_models(
     checkpoint_folder: str,
     min_confidence: float = 0.4,
     yolo_model_name: str = "yolov8n-pose.pt",
+    yolo_device: str = "auto",
+    yolo_half: bool = False,
 ) -> tuple:
     # mediapipe
     num_poses = 1
@@ -27,6 +47,18 @@ def create_models(
 
     # yolo model
     yolo_model = YOLO(yolo_model_path)
+    resolved_device = _resolve_yolo_device(yolo_device)
+    yolo_model.to(resolved_device)
+    yolo_model.overrides["device"] = resolved_device
+    yolo_model.overrides.update(_yolo_precision_kwargs(yolo_half))
+    yolo_model.yolo_device = resolved_device
+    yolo_model.yolo_half = yolo_half
+    logging.info(
+        "YOLO model=%s device=%s half=%s; MediaPipe uses its default CPU delegate",
+        yolo_model_name,
+        resolved_device,
+        yolo_half,
+    )
 
     # hand detector
     hand_options = vision.HandLandmarkerOptions(
@@ -98,15 +130,13 @@ def mdeiapipe_to_xy(data, image_size=None):
     return x, y
 
 
-def yolo_predict(image: np.ndarray, model, min_conf: float = 0):
-    yolo_results = model(image, verbose=False)
-
-    bboxes = yolo_results[0].boxes.xyxy
-    keypoints = yolo_results[0].keypoints.xy
+def _parse_yolo_result(yolo_result, min_conf: float):
+    bboxes = yolo_result.boxes.xyxy
+    keypoints = yolo_result.keypoints.xy
     bboxes = bboxes.cpu().numpy()
     keypoints = keypoints.cpu().numpy()
 
-    conf = yolo_results[0].boxes.conf
+    conf = yolo_result.boxes.conf
     conf = conf.cpu().numpy()
     select_mask_kp = np.sum(keypoints, axis=(1, 2)) > 0.0001
     select_mask_bb = conf > min_conf
@@ -117,6 +147,38 @@ def yolo_predict(image: np.ndarray, model, min_conf: float = 0):
     keypoints = keypoints[select_mask]
 
     return bboxes, keypoints, conf
+
+
+def yolo_predict_batch(
+    images: Sequence[np.ndarray],
+    model,
+    min_conf: float = 0,
+    batch_size: int = 1,
+):
+    if batch_size < 1:
+        raise ValueError("YOLO batch size must be at least 1")
+    if len(images) == 0:
+        return []
+
+    device = getattr(model, "yolo_device", model.overrides.get("device", "auto"))
+    half = getattr(model, "yolo_half", False)
+    image_size = model.overrides.get("imgsz", DEFAULT_CFG_DICT["imgsz"])
+    predictions = []
+    for start in range(0, len(images), batch_size):
+        batch = images[start:start + batch_size]
+        results = model.predict(
+            source=batch,
+            device=device,
+            imgsz=image_size,
+            verbose=False,
+            **_yolo_precision_kwargs(half),
+        )
+        predictions.extend(_parse_yolo_result(result, min_conf) for result in results)
+    return predictions
+
+
+def yolo_predict(image: np.ndarray, model, min_conf: float = 0):
+    return yolo_predict_batch([image], model, min_conf=min_conf, batch_size=1)[0]
 
 
 def keypoints_out_format(mp_keypoints, image_size):

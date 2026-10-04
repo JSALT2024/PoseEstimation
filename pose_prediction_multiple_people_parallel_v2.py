@@ -29,7 +29,7 @@ from utils_predict import (
     mdeiapipe_to_xy,
     new_bbox,
     process_hands,
-    yolo_predict,
+    yolo_predict_batch,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +65,7 @@ def predict(
         no_person_frames: float = 0.2,
         include_signer_metadata: bool = False,
         signer_config: Optional[SignerSelectionConfig] = None,
+        yolo_batch_size: int = 1,
 ) -> dict:
     """
     This function processes a video to detect and extract pose, hand, and face landmarks using Mediapipe models. It also calculates the signing space and crops the images accordingly.
@@ -110,12 +111,16 @@ def predict(
         return {"state": -3, "results": None}
 
     # yolo predict + crop images
-    yolo_predictions = []
-    num_predictions = []
-    for idx, image in enumerate(results["images"]):
-        bboxes, keypoints, confs = yolo_predict(image, yolo_model, yolo_min_conf)
-        yolo_predictions.append([bboxes, keypoints, confs])
-        num_predictions.append(len(bboxes))
+    yolo_predictions = [
+        list(prediction)
+        for prediction in yolo_predict_batch(
+            results["images"],
+            yolo_model,
+            min_conf=yolo_min_conf,
+            batch_size=yolo_batch_size,
+        )
+    ]
+    num_predictions = [len(prediction[0]) for prediction in yolo_predictions]
 
     # multiple people in video
     single_person = np.sum(np.array(num_predictions) <= 1) / len(num_predictions)
@@ -339,6 +344,14 @@ def get_args_parser():
     parser.add_argument('--tmp_folder', type=str, help="If provided, cropped clips are first saved in this folder and "
                                                        "than copied to input_folder.")
     parser.add_argument('--checkpoint_folder', default="", type=str, help="Path to folder with MediaPipe checkpoints.")
+    parser.add_argument('--yolo_model_name', default='yolov8m-pose.pt', type=str,
+                        help="YOLO pose checkpoint filename inside checkpoint_folder.")
+    parser.add_argument('--yolo_device', default='auto', type=str,
+                        help="YOLO device: auto, cpu, cuda:0, etc. ROCm PyTorch also uses cuda:N.")
+    parser.add_argument('--yolo_batch_size', default=1, type=int,
+                        help="Number of video frames per YOLO inference batch.")
+    parser.add_argument('--yolo_half', action='store_true', default=False,
+                        help="Run YOLO in FP16 (intended for GPU execution).")
     parser.add_argument('--sign_space', type=float, default=4, help="Size of the signing space (n * "
                                                                   "distance_between_shoulders)")
     parser.add_argument('--yolo_sign_space', type=float, default=4, help="Size of the signing space (n * "
@@ -373,6 +386,8 @@ def load_signer_config(path: Optional[str]) -> Optional[SignerSelectionConfig]:
 
 if __name__ == "__main__":
     args = get_args_parser().parse_args()
+    if args.yolo_batch_size < 1:
+        raise ValueError("--yolo_batch_size must be at least 1")
 
     yolo_min_confidence = 0.5
     mp_min_confidence = 0.4
@@ -384,7 +399,13 @@ if __name__ == "__main__":
         logging.info(f"Loaded signer config from {args.signer_config}: {signer_config}")
 
     # mediapipe
-    models = create_models(args.checkpoint_folder, mp_min_confidence, yolo_model_name="yolov8m-pose.pt")
+    models = create_models(
+        args.checkpoint_folder,
+        mp_min_confidence,
+        yolo_model_name=args.yolo_model_name,
+        yolo_device=args.yolo_device,
+        yolo_half=args.yolo_half,
+    )
 
     input_folder = args.input_folder
     output_folder = args.output_folder
@@ -473,6 +494,7 @@ if __name__ == "__main__":
                 no_person_frames,
                 include_signer_metadata,
                 signer_config,
+                args.yolo_batch_size,
             )
             video = None
 
