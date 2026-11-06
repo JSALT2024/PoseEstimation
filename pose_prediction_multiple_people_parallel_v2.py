@@ -20,10 +20,11 @@ from tools.signer_tracking import (
     selection_result_to_metadata,
     track_yolo_predictions,
 )
-from utils import crop_pad_image, load_video_cv, get_state_counts
+from utils import crop_pad_image, load_video_cv, load_video_deinterlaced, get_state_counts, deinterlace_from_annotations
 from utils_predict import (
     create_debug_image as _create_debug_image,
     create_index_files,
+    list_input_videos,
     create_models,
     keypoints_out_format,
     mdeiapipe_to_xy,
@@ -372,6 +373,8 @@ def get_args_parser():
     )
     parser.add_argument('--json_only', action='store_true', default=False,
                         help="Save only JSON keypoint files, skip writing cropped videos.")
+    parser.add_argument('--deinterlace_annotations', type=str,
+                        help="Nested clip_order annotations with interlaced and field_order fields; match video stems.")
 
     parser.add_argument('--target_index_values', type=int, default=[], nargs="*")
     return parser
@@ -386,6 +389,11 @@ def load_signer_config(path: Optional[str]) -> Optional[SignerSelectionConfig]:
 
 if __name__ == "__main__":
     args = get_args_parser().parse_args()
+    interlaced_clips = {}
+    if args.deinterlace_annotations:
+        with open(args.deinterlace_annotations, encoding="utf-8") as handle:
+            interlaced_clips = deinterlace_from_annotations(
+                json.load(handle), list_input_videos(args.input_folder, args.video_suffixes))
     if args.yolo_batch_size < 1:
         raise ValueError("--yolo_batch_size must be at least 1")
 
@@ -483,7 +491,13 @@ if __name__ == "__main__":
         # predict
         prediction = None
         try:
-            video, fps = load_video_cv(video_path)
+            preprocessing = None
+            if video_name in interlaced_clips:
+                video, fps, preprocessing = load_video_deinterlaced(
+                    video_path, interlaced_clips[video_name])
+                logging.info("Preprocessing %s: %s", video_name, preprocessing)
+            else:
+                video, fps = load_video_cv(video_path)
             prediction = predict(
                 video,
                 models,
@@ -522,6 +536,8 @@ if __name__ == "__main__":
 
                 # save keypoints
                 results = prediction["results"]
+                if preprocessing is not None:
+                    results["preprocessing"] = preprocessing
                 del results["images"]
                 del results["cropped_images"]
                 with open(keypoints_path, "w") as f:

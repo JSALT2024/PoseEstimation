@@ -18,6 +18,7 @@ wget -O checkpoints/face_landmarker.task -q https://storage.googleapis.com/media
 ```
 
 ## Predict keypoints in parallel
+
 ### Descriptions:
 
  - input: folder with clips
@@ -68,6 +69,26 @@ python pose_prediction_parallel.py \
   # ...
 ```
 
+
+### Optional deinterlacing (v2)
+
+Append `--deinterlace_annotations /path/annotation.front.all.json` to the v2
+command to deinterlace annotated clips before inference. Omit it for the original
+behavior; no annotation file is required. The annotation format is:
+
+```json
+{"group": {"clip_order": ["clip"], "clip": {"interlaced": true, "field_order": "bff"}}}
+```
+
+Clip IDs match filename stems exactly. Use `true` with `tff` or `bff` for
+interlaced clips, and `false` with `progressive` for unchanged clips. Missing or
+unknown annotations for input videos fail validation; unrelated fields are ignored.
+
+Requires FFmpeg/ffprobe for interlaced clips. Source FPS and frame count are
+preserved; variable-rate clips are unsupported. Applied preprocessing is recorded
+in output JSON. Read-only SquashFS inputs work with writable temporary storage
+(`TMPDIR` on Linux; allow one lossless clip per worker). Use fresh output/index
+directories when changing preprocessing settings.
 
 ## Create normalized keypoint feature h5 dataset
 Descriptions:

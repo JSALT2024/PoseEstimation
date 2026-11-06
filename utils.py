@@ -3,6 +3,10 @@ import os
 import pandas as pd
 from tqdm import tqdm
 import cv2
+import json
+import subprocess
+import tempfile
+from fractions import Fraction
 from typing import List
 
 
@@ -20,6 +24,74 @@ def load_video_cv(path: str) -> (List[np.ndarray], float):
             video.append(img)
     cap.release()
     return video, fps
+
+
+def deinterlace_from_annotations(annotations: dict, video_names):
+    """Map actual video basenames using nested clip_order annotations, case-sensitively."""
+    clips = {}
+    for group in annotations.values():
+        for clip_id in group["clip_order"]:
+            record = group[clip_id]
+            value = (record.get("interlaced"), record.get("field_order"))
+            if clip_id in clips and clips[clip_id] != value:
+                raise ValueError(f"Conflicting interlace annotations for {clip_id}")
+            clips[clip_id] = value
+    manifest = {}
+    for name in video_names:
+        clip_id = os.path.splitext(name)[0]
+        if clip_id not in clips:
+            raise ValueError(f"Missing interlace annotation for {name}")
+        interlaced, order = clips[clip_id]
+        if interlaced is False and order == "progressive":
+            continue
+        if interlaced is True and order in ("tff", "bff"):
+            manifest[name] = order
+        else:
+            raise ValueError(f"Unknown or inconsistent interlace annotation for {name}: {interlaced}, {order}")
+    return manifest
+
+
+def load_video_deinterlaced(path: str, parity: str):
+    """Deinterlace a flagged CFR clip at source frame rate; never write beside input."""
+    if parity not in ("tff", "bff"):
+        raise ValueError("Interlace parity must be tff or bff")
+    def run(command):
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError(f"{command[0]} failed: {result.stderr[-4000:]}")
+        return result.stdout
+
+    probe = json.loads(run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+        "-show_streams", "-show_entries",
+        "stream=avg_frame_rate:frame=best_effort_timestamp_time",
+        "-of", "json", os.path.abspath(path),
+    ]))
+    rate = Fraction(probe["streams"][0]["avg_frame_rate"])
+    timestamps = [float(frame["best_effort_timestamp_time"]) for frame in probe["frames"]]
+    if rate <= 0 or not timestamps or not np.all(np.isfinite(timestamps)):
+        raise ValueError("Flagged clip has missing/invalid timing")
+    fps = float(rate)
+    if len(timestamps) > 1 and not np.allclose(
+        np.diff(timestamps), 1 / fps, rtol=0, atol=max(0.00001, 0.002 / fps)
+    ):
+        raise ValueError("Deinterlacing currently requires constant frame rate")
+    filter_spec = f"bwdif=mode=send_frame:parity={parity}:deint=all"
+    with tempfile.TemporaryDirectory(prefix="pose-deinterlace-") as directory:
+        output = os.path.join(directory, "progressive.mkv")
+        run(["ffmpeg", "-nostdin", "-v", "error", "-xerror", "-i", os.path.abspath(path),
+             "-map", "0:v:0", "-an", "-vf", filter_spec, "-fps_mode", "passthrough",
+             "-c:v", "ffv1", "-threads", "1", output])
+        video, _ = load_video_cv(output)
+    if len(video) != len(timestamps):
+        raise RuntimeError(f"Deinterlacing frame count mismatch: {len(timestamps)} -> {len(video)}")
+    return video, fps, {
+        "deinterlace": "bwdif", "filter": filter_spec,
+        "ffmpeg_version": run(["ffmpeg", "-version"]).splitlines()[0],
+        "source_fps": str(rate), "output_fps": str(rate),
+        "source_frame_count": len(timestamps), "output_frame_count": len(video),
+        "source_start_time_seconds": timestamps[0], "time_origin": "first decoded frame",
+    }
 
 
 def crop_pad_image(image: np.ndarray, bbox: np.ndarray, border: float = 0.25, color: int = 114) -> (np.ndarray, list):
