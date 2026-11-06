@@ -70,6 +70,14 @@ python pose_prediction_parallel.py \
 ```
 
 
+Workers with `--index_file_id` report only their own shard, so they do not read
+another worker's CSV during a write. After all workers have exited (after the
+blocking `srun` step), generate a combined summary from the repository root:
+
+```shell
+python -c "import sys; from utils import get_state_counts; print(get_state_counts(sys.argv[1]))" /path/to/index_files
+```
+
 ### Optional deinterlacing (v2)
 
 Append `--deinterlace_annotations /path/annotation.front.all.json` to the v2

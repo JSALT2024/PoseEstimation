@@ -475,7 +475,7 @@ if __name__ == "__main__":
             index_files.pop(idx)
 
         if index_row_idx == -1:
-            state_counts = get_state_counts(args.index_path)
+            state_counts = get_state_counts(args.index_path, args.index_file_id)
             logging.info(state_counts)
             logging.info(f"All files processed exiting")
             break
@@ -600,5 +600,5 @@ if __name__ == "__main__":
     logging.info(f"Average frames: {np.mean(run_stats['all_frames']):.3f}")
     for name in run_stats["predictions"]:
         logging.info(f"Average {name} predictions: {np.mean(run_stats['predictions'][name]):.3f}")
-    state_counts = get_state_counts(args.index_path)
+    state_counts = get_state_counts(args.index_path, args.index_file_id)
     logging.info(state_counts)

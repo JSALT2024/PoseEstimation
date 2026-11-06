@@ -145,14 +145,19 @@ def crop_pad_image(image: np.ndarray, bbox: np.ndarray, border: float = 0.25, co
     return cropped_image, new_bbox
 
 
-def get_state_counts(index_folder: str) -> str:
+def get_state_counts(index_folder: str, index_file_id: int = None) -> str:
     """
     Load index files from a given folder and count the occurrences of each state value.
 
     Parameters:
         index_folder (str): The folder containing the index files.
+        index_file_id (int): Summarize only this worker's shard when supplied.
+            Summarize all shards only after their writers have exited.
     """
-    index_files = [os.path.join(index_folder, file) for file in os.listdir(index_folder) if ".csv" in file]
+    if index_file_id is not None:
+        index_files = [os.path.join(index_folder, f"index_file_{index_file_id:03d}.csv")]
+    else:
+        index_files = [os.path.join(index_folder, file) for file in os.listdir(index_folder) if ".csv" in file]
     index_files = [pd.read_csv(file, dtype={"file_names": str, "state": float}) for file in tqdm(index_files)]
 
     index_file = pd.concat(index_files)
